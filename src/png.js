@@ -147,6 +147,93 @@ export function insertExif(buf, tiffBuffer) {
   ]);
 }
 
+/** Buat chunk iTXt PNG untuk metadata teks (Microstock compatible: Title, Description, Keywords, Author). */
+export function buildItxtChunk(keyword, text) {
+  const kwBuf = Buffer.from(keyword, "utf8");
+  const txtBuf = Buffer.from(text, "utf8");
+  const payload = Buffer.concat([
+    kwBuf,
+    Buffer.from([0, 0, 0, 0, 0]),
+    txtBuf,
+  ]);
+  return buildPngChunk("iTXt", payload);
+}
+
+/** Sisipkan atau perbarui chunk iTXt untuk metadata teks (Title, Description, Keywords, Author). */
+export function updatePngTextChunks(buf, textEntries) {
+  const parsed = parsePng(buf);
+  const keysToUpdate = new Set(["Title", "Description", "Caption", "Keywords", "Author", "Artist", "Comment"]);
+
+  const newChunks = [];
+  if (textEntries.title) newChunks.push(buildItxtChunk("Title", textEntries.title));
+  const desc = textEntries.description || textEntries.caption || textEntries.title;
+  if (desc) newChunks.push(buildItxtChunk("Description", desc));
+  if (textEntries.keywords) {
+    const kwStr = Array.isArray(textEntries.keywords)
+      ? textEntries.keywords.join(", ")
+      : String(textEntries.keywords);
+    if (kwStr) newChunks.push(buildItxtChunk("Keywords", kwStr));
+  }
+  if (textEntries.author) newChunks.push(buildItxtChunk("Author", textEntries.author));
+
+  const ihdr = parsed.chunks.find((c) => c.type === "IHDR");
+  const ihdrEnd = ihdr ? ihdr.offset + ihdr.total : 8;
+
+  const afterIhdr = [];
+  for (const c of parsed.chunks) {
+    if (c.type === "IHDR") continue;
+    if (c.type === "tEXt" || c.type === "iTXt") {
+      const payload = buf.subarray(c.payloadStart, c.payloadStart + c.payloadLen);
+      const nullIdx = payload.indexOf(0);
+      if (nullIdx > 0) {
+        const kw = payload.subarray(0, nullIdx).toString("utf8");
+        if (keysToUpdate.has(kw)) continue;
+      }
+    }
+    afterIhdr.push(buf.subarray(c.offset, c.offset + c.total));
+  }
+
+  return Buffer.concat([buf.subarray(0, ihdrEnd), ...newChunks, ...afterIhdr]);
+}
+
+/** Buat chunk iTXt PNG untuk metadata Adobe XMP (XML:com.adobe.xmp). */
+export function buildPngXmpChunk(xmpXmlString) {
+  const kwBuf = Buffer.from("XML:com.adobe.xmp", "utf8");
+  const txtBuf = Buffer.from(xmpXmlString, "utf8");
+  const payload = Buffer.concat([
+    kwBuf,
+    Buffer.from([0, 0, 0, 0, 0]),
+    txtBuf,
+  ]);
+  return buildPngChunk("iTXt", payload);
+}
+
+/** Sisipkan atau perbarui chunk XMP (XML:com.adobe.xmp) pada PNG. */
+export function insertPngXmp(buf, xmpXmlString) {
+  const parsed = parsePng(buf);
+  const xmpChunk = buildPngXmpChunk(xmpXmlString);
+
+  const ihdr = parsed.chunks.find((c) => c.type === "IHDR");
+  const ihdrEnd = ihdr ? ihdr.offset + ihdr.total : 8;
+
+  const keepChunks = [];
+  for (const c of parsed.chunks) {
+    if (c.type === "IHDR") continue;
+    if (c.type === "iTXt" || c.type === "tEXt") {
+      const payload = buf.subarray(c.payloadStart, c.payloadStart + c.payloadLen);
+      const nullIdx = payload.indexOf(0);
+      if (nullIdx > 0) {
+        const kw = payload.subarray(0, nullIdx).toString("utf8");
+        if (kw === "XML:com.adobe.xmp") continue;
+      }
+    }
+    keepChunks.push(buf.subarray(c.offset, c.offset + c.total));
+  }
+
+  const header = buf.subarray(0, ihdrEnd);
+  return Buffer.concat([header, xmpChunk, ...keepChunks]);
+}
+
 /** Buang chunk eXIf dari PNG. Mengembalikan null jika tidak ada eXIf. */
 export function removeExif(buf) {
   const parsed = parsePng(buf);

@@ -17,7 +17,7 @@ CLI (aplikasi baris perintah) untuk **membaca & mengubah metadata foto** dan
 - ⚡ **Proses Otomatis (`auto` / `npm start`)**: Sekali perintah untuk menerapkan judul & kata kunci dari file daftar (`title.txt` & `keyword.txt`) sekaligus mengganti nama file foto di folder `foto/` sesuai judulnya.
 - 📝 **Terapkan Metadata dari File Daftar (`apply`)**: Memetakan baris `title.txt` dan kelompok kata kunci `keyword.txt` (dipisahkan baris kosong) secara akurat ke foto yang diurutkan secara alami (*numeric natural sort*).
 - 🏷️ **Rename Batch Berbasis Template (`rename`)**: Mengubah nama file secara masal dengan token dinamis `{title}`, `{keywords}`, `{artist}`, `{make}`, `{model}`, `{lens}`, `{date}`, `{date:FORMAT}`, `{seq}`, `{seq:N}`, `{folder}`, `{name}`, `{ext}`.
-- 🔒 **Sanitasi & Anti-Bentrok Nama File**: Pembersihan otomatis karakter ilegal Windows/Linux, penanganan konflik nama (*anti-collision* `_1`, `_2`), serta *fallback* nama asli jika judul kosong.
+- 🔒 **Sanitasi & Two-Pass Batch Rename**: Pembersihan otomatis karakter ilegal Windows/Linux, strategi *Two-Pass Rename* untuk mencegah bentrok palsu dengan nama file lama saat generate ulang, penanganan duplikat nyata (` (2)`, ` (3)`), serta *fallback* nama asli jika judul kosong.
 - 🛡️ **Pembersihan Metadata Privasi (`strip`)**: Menghapus seluruh metadata sensitif (EXIF, IPTC, XMP) dari foto.
 - 🧪 **Pengujian Internal Terintegrasi (`selftest`)**: Pengujian mandiri untuk memverifikasi integritas pembacaan, penulisan, dan serialisasi metadata secara *round-trip*.
 - 📊 **Output JSON & Mode Simulasi**: Dukungan format JSON untuk pembacaan metadata (`read --json`) dan mode simulasi (*dry-run*) untuk perintah rename.

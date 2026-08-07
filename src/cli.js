@@ -261,27 +261,74 @@ function parseTitles(lines) {
 }
 
 /**
- * Terapkan judul/deskripsi (dari title.txt) dan kata kunci (dari keyword.txt)
- * secara batch. Baris ke-N dipakai untuk file ke-N (file diurutkan berdasarkan
- * nama). title.txt: satu baris per foto (baris kosong pemisah diabaikan). keyword.txt:
- * satu kata kunci per baris atau dipisah koma per kelompok foto.
+ * Urutkan daftar file agar selaras dari atas dengan baris di title.txt.
+ * Jika file sudah memiliki metadata title yang cocok dengan baris ke-K di title.txt,
+ * letakkan file tersebut di indeks K-1 agar tidak terjadi pergeseran/swap acak saat generate ulang.
+ * File sisanya diurutkan secara alami (numeric natural sort).
  */
+function sortFilesByTitles(files, titles) {
+  if (!titles || !titles.length) {
+    return files.slice().sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+    );
+  }
+
+  const fileMetas = files.map((f) => {
+    let t = null;
+    try {
+      const r = meta.readFileMeta(f);
+      const view = meta.buildExifView(r.model, r.dims, r.iptc);
+      t = view && view.title ? view.title.trim().toLowerCase() : null;
+    } catch {}
+    return { file: f, title: t };
+  });
+
+  const slots = new Array(files.length).fill(null);
+  const unassigned = [];
+
+  for (const item of fileMetas) {
+    let matchedIdx = -1;
+    if (item.title) {
+      matchedIdx = titles.findIndex((t) => t.trim().toLowerCase() === item.title);
+    }
+    if (matchedIdx >= 0 && matchedIdx < files.length && slots[matchedIdx] === null) {
+      slots[matchedIdx] = item.file;
+    } else {
+      unassigned.push(item.file);
+    }
+  }
+
+  unassigned.sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+  );
+
+  let unIdx = 0;
+  for (let i = 0; i < slots.length; i++) {
+    if (slots[i] === null) {
+      slots[i] = unassigned[unIdx++];
+    }
+  }
+
+  return slots;
+}
+
+// ---------- apply (judul/deskripsi & kata kunci dari file daftar) ----------
 function cmdApply(files, opts) {
   if (!files.length) throw new Error("Perintah apply membutuhkan minimal 1 file/glob/direktori.");
   if (!opts.titles && !opts["keywords-file"]) {
     throw new Error("Berikan --titles <file> dan/atau --keywords-file <file>.");
   }
 
-  const list = renameMod.expandFiles(files).sort((a, b) =>
-    a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
-  );
-  if (!list.length) throw new Error("Tidak ada file yang ditemukan.");
+  const rawList = renameMod.expandFiles(files);
+  if (!rawList.length) throw new Error("Tidak ada file yang ditemukan.");
 
   const titles = opts.titles ? parseTitles(readLines(opts.titles)) : null;
   const keywordGroups = opts["keywords-file"]
     ? utils.parseKeywordGroups(readLines(opts["keywords-file"]))
     : null;
   const noBackup = opts["no-backup"] === true;
+
+  const list = sortFilesByTitles(rawList, titles);
 
   utils.info("Menerapkan judul & kata kunci dari file daftar...");
   let applied = 0;
@@ -335,10 +382,8 @@ function cmdApply(files, opts) {
 // ---------- auto (proses otomatis: apply title/keyword + rename sesuai title) ----------
 function cmdAuto(files, opts) {
   const targetFiles = files.length ? files : ["foto"];
-  const list = renameMod.expandFiles(targetFiles).sort((a, b) =>
-    a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
-  );
-  if (!list.length) throw new Error("Tidak ada file yang ditemukan.");
+  const rawList = renameMod.expandFiles(targetFiles);
+  if (!rawList.length) throw new Error("Tidak ada file yang ditemukan.");
 
   const titleFile = opts.titles || "title.txt";
   const keywordFile = opts["keywords-file"] || "keyword.txt";
@@ -349,23 +394,22 @@ function cmdAuto(files, opts) {
     keywordGroups = utils.parseKeywordGroups(readLines(keywordFile));
   }
 
+  const list = sortFilesByTitles(rawList, titles);
+
   utils.info("Proses otomatis: menerapkan metadata & mengganti nama file...");
 
+  // 1. Terapkan metadata ke seluruh file
   list.forEach((f, i) => {
     const editOpts = { "no-backup": true };
-    let newTitle = null;
-
     if (titles && i < titles.length && titles[i] !== "") {
-      newTitle = titles[i];
-      editOpts.title = newTitle;
-      editOpts.caption = newTitle;
-      editOpts.description = newTitle;
+      editOpts.title = titles[i];
+      editOpts.caption = titles[i];
+      editOpts.description = titles[i];
     }
     if (keywordGroups && i < keywordGroups.length) {
       editOpts.keywords = keywordGroups[i];
     }
 
-    // 1. Terapkan metadata jika ada
     if (Object.keys(editOpts).length > 1) {
       try {
         printEditResult(meta.editFile(f, editOpts));
@@ -373,24 +417,11 @@ function cmdAuto(files, opts) {
         utils.err(f + ": gagal edit metadata (" + e.message + ")");
       }
     }
-
-    // 2. Rename file sesuai title jika ada title baru
-    if (newTitle) {
-      const freshMeta = meta.readFileMeta(f);
-      const target = renameMod.buildName(f, "{title}", i + 1, freshMeta);
-      const oldName = path.basename(f);
-      const newName = path.basename(target);
-      if (newName.toLowerCase() !== oldName.toLowerCase()) {
-        const uniqueTarget = utils.ensureUniqueTarget(target, new Set(), f);
-        try {
-          fs.renameSync(f, uniqueTarget);
-          utils.info("   Rename: " + oldName + " -> " + utils.green(path.basename(uniqueTarget)));
-        } catch (e) {
-          utils.err(oldName + ": gagal rename (" + e.message + ")");
-        }
-      }
-    }
   });
+
+  // 2. Rename batch seluruh file sesuai title
+  utils.info("");
+  renameMod.runRename(list, "{title}", { apply: true });
 
   utils.info("");
   utils.info(utils.green("Selesai diproses!"));

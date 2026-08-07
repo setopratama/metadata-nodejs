@@ -336,6 +336,61 @@ export function collectIptcEdits(opts, base) {
   };
 }
 
+function escapeXml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/** Buat paket XMP XML standar Adobe untuk Title, Description, Keywords (dc:subject), dan Author. */
+export function buildXmpPacket(meta) {
+  const title = meta.title || "";
+  const desc = meta.description || meta.caption || title || "";
+  const author = meta.author || "";
+  const keywords = Array.isArray(meta.keywords)
+    ? meta.keywords
+    : (meta.keywords ? String(meta.keywords).split(",").map((s) => s.trim()).filter(Boolean) : []);
+
+  const kwItems = keywords
+    .map((k) => `     <rdf:li>${escapeXml(k)}</rdf:li>`)
+    .join("\n");
+
+  return `<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">
+   <dc:title>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">${escapeXml(title)}</rdf:li>
+    </rdf:Alt>
+   </dc:title>
+   <dc:description>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">${escapeXml(desc)}</rdf:li>
+    </rdf:Alt>
+   </dc:description>
+   <dc:creator>
+    <rdf:Seq>
+     <rdf:li>${escapeXml(author)}</rdf:li>
+    </rdf:Seq>
+   </dc:creator>
+   <dc:subject>
+    <rdf:Bag>
+${kwItems}
+    </rdf:Bag>
+   </dc:subject>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>`;
+}
+
 /** Edit metadata satu file (dengan cadangan .bak secara default). */
 export function editFile(filePath, opts) {
   const buf = fs.readFileSync(filePath);
@@ -396,6 +451,34 @@ export function editFile(filePath, opts) {
       // Semua field IPTC dikosongkan dan tidak ada resource lain → buang APP13
       const noIptc = jpeg.removeIptc(out);
       if (noIptc) out = noIptc;
+    }
+  }
+
+  // Pada PNG, tambahkan/perbarui chunk iTXt untuk kompatibilitas Microstock (Title, Description, Keywords, Author)
+  if (isPn && hasIptcOpts) {
+    out = png.updatePngTextChunks(out, {
+      title: opts.title,
+      description: opts.description,
+      caption: opts.caption,
+      keywords: opts.keywords,
+      author: opts.author,
+    });
+  }
+
+  // Tambahkan/perbarui paket Adobe XMP (XML:com.adobe.xmp pada PNG / APP1 XMP pada JPEG)
+  // Ini SANGAT PENTING agar Keywords terdeteksi otomatis di Adobe Stock Contributor
+  if (hasIptcOpts) {
+    const xmpStr = buildXmpPacket({
+      title: opts.title,
+      description: opts.description,
+      caption: opts.caption,
+      keywords: opts.keywords,
+      author: opts.author,
+    });
+    if (isJp) {
+      out = jpeg.insertXmp(out, xmpStr);
+    } else if (isPn) {
+      out = png.insertPngXmp(out, xmpStr);
     }
   }
 

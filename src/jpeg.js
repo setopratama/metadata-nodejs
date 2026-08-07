@@ -190,3 +190,23 @@ export function removeXmp(buf) {
   }
   return out;
 }
+
+/** Bangun segmen APP1 XMP lengkap (FF E1 + panjang + "http://ns.adobe.com/xap/1.0/\0" + XMP XML). */
+export function buildXmpApp1(xmpXmlString) {
+  const payload = Buffer.concat([
+    Buffer.from("http://ns.adobe.com/xap/1.0/\0", "latin1"),
+    Buffer.from(xmpXmlString, "utf8"),
+  ]);
+  const seg = Buffer.alloc(2 + 2 + payload.length);
+  seg.writeUInt16BE(0xffe1, 0);
+  seg.writeUInt16BE(2 + payload.length, 2);
+  payload.copy(seg, 4);
+  return seg;
+}
+
+/** Sisipkan atau ganti segmen APP1 XMP pada JPEG. */
+export function insertXmp(buf, xmpXmlString) {
+  const cleaned = removeXmp(buf) || buf;
+  const app1 = buildXmpApp1(xmpXmlString);
+  return Buffer.concat([cleaned.subarray(0, 2), app1, cleaned.subarray(2)]);
+}

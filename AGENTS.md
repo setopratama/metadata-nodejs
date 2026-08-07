@@ -89,14 +89,14 @@ Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js`). `rename.js` 
      sebagai `others[]` di `readIptcFromApp13()` dan ditulis ulang oleh
      `buildIptcApp13(fields, others)`. Bila tidak ada APP13, segmen baru disisipkan
      setelah SOI.
-   - **Kesesuaian PNG & Fallback EXIF**: `applyEdits()` menyelaraskan `opts.title`, `opts.keywords`, `opts.caption`, dan `opts.author` ke tag EXIF IFD0 (`XPKeywords` `0x9c9e`, `XPTitle` `0x9c9b`, `XPComment` `0x9c9c`, `XPAuthor` `0x9c9d`, serta `ImageDescription` `0x010e`). `buildExifView()` membaca data IPTC terlebih dahulu dan menggunakan tag EXIF XP tersebut sebagai *fallback* jika IPTC tidak tersedia (seperti pada file PNG).
+   - **Kesesuaian PNG & Microstock (Adobe Stock / Shutterstock / Freepik)**: `applyEdits()` dan `buildXmpPacket()` menyelaraskan `opts.title`, `opts.keywords`, `opts.caption`, dan `opts.author` ke tag EXIF IFD0 (`XPKeywords` `0x9c9e`, `XPTitle` `0x9c9b`, `XPComment` `0x9c9c`, `XPAuthor` `0x9c9d`, serta `ImageDescription` `0x010e`), chunk teks `iTXt` (`Title`, `Description`, `Keywords`, `Author`), serta **paket Adobe XMP (`XML:com.adobe.xmp` pada PNG / APP1 XMP `http://ns.adobe.com/xap/1.0/` pada JPEG)** dengan tag Dublin Core `<dc:subject>` (`<rdf:Bag>`). Hal ini menjamin judul dan kata kunci 100% terdeteksi otomatis pada sistem pengunggah Adobe Stock Contributor.
    - Menghapus field: `--title ""` / `--keywords ""` menghapus field tersebut.
      Bila SEMUA field IPTC/EXIF kosong dan tidak ada resource lain, `buildIptcApp13`
      mengembalikan null dan `editFile` membuang segmen APP13 serta tag terkait.
 4c. **`strip` menghapus EXIF (APP1) + IPTC (APP13 Photoshop) + XMP (APP1)** —
    tujuan utamanya privasi. Jangan mengurangi cakupan ini tanpa alasan kuat.
    `removeExif`/`removeIptc`/`removeXmp` mengembalikan `null` bila segmen tidak ada.
-4d. **Format file daftar `apply` & `auto`**: `title.txt` satu judul per baris (baris kosong pemisah diabaikan lewat `parseTitles()`, helper privat di `src/cli.js`). `keyword.txt` mendukung satu kata kunci per baris maupun dipisahkan koma dalam satu baris, dengan **baris kosong sebagai pemisah kelompok** — kelompok ke-N ↔ foto ke-N; parser murni ada di `utils.parseKeywordGroups()`. File diurutkan dengan *numeric natural sort* (`localeCompare(..., { numeric: true })`).
+4d. **Format file daftar `apply` & `auto`**: `title.txt` satu judul per baris (baris kosong pemisah diabaikan lewat `parseTitles()`, helper privat di `src/cli.js`). `keyword.txt` mendukung satu kata kunci per baris maupun dipisahkan koma dalam satu baris, dengan **baris kosong sebagai pemisah kelompok** — kelompok ke-N ↔ foto ke-N; parser murni ada di `utils.parseKeywordGroups()`. Pemetaan file menggunakan `sortFilesByTitles()` agar judul yang sudah cocok dengan `title.txt` tetap terkunci di posisinya (mencegah foto tertukar saat generate ulang).
    - **Jumlah baris/kelompok TIDAK wajib sama dengan jumlah foto** — ini
      disengaja, bukan bug: daftar lebih pendek → file sisanya dilewati dengan
      peringatan (dihitung "dilewati" di ringkasan; sebuah file baru dilewati
@@ -107,12 +107,9 @@ Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js`). `rename.js` 
      ini menjadi error keras tanpa persetujuan pengguna.
 5. **Nama file Windows & Fallback Rename**: `sanitizeName()` membersihkan `< > : " / \ | ? *` dan
    karakter kontrol, buang titik/spasi di akhir, batasi 180 karakter. `buildName()` menangani ekstensi secara terpisah dan melakukan *fallback* ke nama asli (`parsed.name`) jika token template (seperti `{title}`) menghasilkan string kosong.
-6. **Anti-bentrok nama**: `ensureUniqueTarget(target, planned, source)` mengecek
-   bentrok antar-file batch (case-insensitive) DAN terhadap file yang sudah ada di
-   disk (termasuk cek case-insensitive untuk Linux/macOS). `source` (file asli)
-   dikecualikan agar rename yang hanya mengubah huruf besar/kecil tetap diizinkan.
+6. **Anti-bentrok & Batch Rename**: `ensureUniqueTarget(target, planned, source, batchSources)` mengecek bentrok target batch dan file disk eksternal. File yang termasuk dalam daftar sumber batch (`batchSources`) dikecualikan dari pemeriksaan disk agar tidak terjadi bentrok palsu dengan nama file lama. Eksekusi rename batch (`runRename`) menggunakan strategi *Two-Pass Rename* (menggunakan file sementara `.tmp_imgmeta_...`) agar penamaan ulang masal tidak saling mengunci atau menghasilkan akhiran `_1`. Jika terdapat bentrok nama target yang benar-benar ganda, penomoran unik menggunakan format ` (2)`, ` (3)` dst.
 7. **Dry-run rename**: `rename` TANPA `--apply` hanya menampilkan rencana, tidak
-   mengubah apa pun.
+    mengubah apa pun.
 8. **Ekspansi file**: glob `* ?` didukung; argumen direktori dibaca isinya (hanya
    ekstensi gambar); hasil di-`path.resolve` dan di-dedup. `isImageFilename()`
    (helper privat di `src/rename.js`, bukan ekspor publik) juga mengenali nama

@@ -192,6 +192,12 @@ export function runSelftest() {
     "Template {date} default: " + path.basename(n4)
   );
 
+  const unq1 = utils.ensureUniqueTarget("D:/Foto/test.jpg", new Set(["d:/foto/test.jpg"]));
+  assert(
+    path.normalize(unq1) === path.join("D:/Foto", "test (2).jpg"),
+    "Bentrok nama target menggunakan format standar (2): " + path.basename(unq1)
+  );
+
   console.log("");
   if (fail === 0) {
     console.log("Semua pengujian lulus (" + pass + "/" + pass + ").");

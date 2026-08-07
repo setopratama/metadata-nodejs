@@ -130,10 +130,11 @@ export function buildName(filePath, template, index, fileMeta) {
  * @param {string} template Template nama
  * @param {object} options  { apply: boolean, start: number }
  */
-export function runRename(files, template, options) {
+export function runRename(files, template, options = {}) {
   const apply = Boolean(options.apply);
   const start = options.start || 1;
   const planned = new Set();
+  const batchSources = new Set(files.map((f) => path.resolve(f).toLowerCase()));
   const result = { total: files.length, renamed: 0, unchanged: 0, failed: 0, dryRun: !apply };
 
   utils.info(
@@ -141,6 +142,8 @@ export function runRename(files, template, options) {
       ? "Mengganti nama file..."
       : "Rencana rename (gunakan --apply untuk mengeksekusi):"
   );
+
+  const pending = [];
 
   files.forEach((file, i) => {
     const idx = start + i;
@@ -153,38 +156,57 @@ export function runRename(files, template, options) {
       return;
     }
 
-    const parsed = path.parse(file);
+    const oldName = path.basename(file);
     let target;
     try {
       target = buildName(file, template, idx, fileMeta);
     } catch (e) {
-      utils.err(path.basename(file) + ": " + e.message);
+      utils.err(oldName + ": " + e.message);
       result.failed += 1;
       return;
     }
 
-    const oldName = path.basename(file);
-    const newName = path.basename(target);
-    if (newName.toLowerCase() === oldName.toLowerCase()) {
+    if (path.resolve(file).toLowerCase() === path.resolve(target).toLowerCase()) {
       utils.info(utils.gray(String(idx).padStart(3, " ") + ". " + oldName + "  (nama tetap)"));
       result.unchanged += 1;
       return;
     }
 
-    target = utils.ensureUniqueTarget(target, planned, file);
+    target = utils.ensureUniqueTarget(target, planned, file, batchSources);
     planned.add(target.toLowerCase());
+
     utils.info("   " + utils.gray(String(idx).padStart(3, " ")) + ". " + oldName + "  ->  " + utils.green(path.basename(target)));
 
-    if (apply) {
+    pending.push({ file, target, oldName, idx });
+  });
+
+  if (apply && pending.length > 0) {
+    const nonce = Date.now();
+    const tmpItems = [];
+    for (let i = 0; i < pending.length; i++) {
+      const item = pending[i];
+      const dir = path.dirname(item.file);
+      const ext = path.extname(item.file);
+      const tmpPath = path.join(dir, `.tmp_imgmeta_${nonce}_${i}${ext}`);
       try {
-        fs.renameSync(file, target);
-        result.renamed += 1;
+        fs.renameSync(item.file, tmpPath);
+        tmpItems.push({ tmpPath, target: item.target, oldName: item.oldName });
       } catch (e) {
-        utils.err(oldName + ": gagal mengganti nama (" + e.message + ")");
+        utils.err(item.oldName + ": gagal membuat nama sementara (" + e.message + ")");
         result.failed += 1;
       }
     }
-  });
+
+    for (const item of tmpItems) {
+      try {
+        fs.renameSync(item.tmpPath, item.target);
+        result.renamed += 1;
+      } catch (e) {
+        utils.err(item.oldName + ": gagal mengganti nama (" + e.message + ")");
+        result.failed += 1;
+      }
+    }
+  }
 
   utils.info("");
   const willRename = files.length - result.unchanged - result.failed;

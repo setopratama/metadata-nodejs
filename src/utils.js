@@ -112,31 +112,36 @@ export function sanitizeName(name) {
 // source (opsional) adalah file asli yang sedang diganti nama; nama itu sendiri
 // dikecualikan dari pemeriksaan agar rename hanya mengubah huruf besar/kecil
 // (mis. a.jpg -> A.jpg) tetap diperbolehkan.
-export function ensureUniqueTarget(target, planned, source) {
+/**
+ * Pastikan target belum dipakai.
+ * Format penambahan bila bentrok nyata: " (2)", " (3)", dst.
+ * @param {string} target        Path target yang diinginkan
+ * @param {Set<string>} planned  Set target yang sudah direncanakan dalam batch (lowercase)
+ * @param {string|null} source   File asli yang sedang diganti nama
+ * @param {Set<string>|null} batchSources Set seluruh file sumber dalam batch
+ */
+export function ensureUniqueTarget(target, planned, source = null, batchSources = null) {
   const ext = path.extname(target);
   const dir = path.dirname(target);
   const base = path.basename(target, ext);
   let name = base;
-  let i = 1;
-  const taken = (p) => planned.has(p.toLowerCase()) || fs.existsSync(p);
-  // Daftar nama di direktori (case-insensitive) untuk mencegah penimpaan file
-  // yang hanya berbeda huruf besar/kecil di sistem file POSIX (Linux/macOS).
-  let existing = null;
-  try {
-    const skip = source == null ? null : path.basename(source).toLowerCase();
-    existing = new Set(
-      fs.readdirSync(dir)
-        .map((n) => n.toLowerCase())
-        .filter((n) => n !== skip)
-    );
-  } catch {
-    existing = null;
-  }
-  while (
-    taken(path.join(dir, name + ext)) ||
-    (existing && existing.has((name + ext).toLowerCase()))
-  ) {
-    name = base + "_" + i;
+  let i = 2;
+
+  const plannedNorm = planned
+    ? new Set(Array.from(planned).map((x) => path.resolve(x).toLowerCase()))
+    : null;
+
+  const isTaken = (p) => {
+    const pNorm = path.resolve(p).toLowerCase();
+    if (plannedNorm && plannedNorm.has(pNorm)) return true;
+    if (!fs.existsSync(p)) return false;
+    if (source && pNorm === path.resolve(source).toLowerCase()) return false;
+    if (batchSources && batchSources.has(pNorm)) return false;
+    return true;
+  };
+
+  while (isTaken(path.join(dir, name + ext))) {
+    name = base + " (" + i + ")";
     i += 1;
   }
   return path.join(dir, name + ext);
