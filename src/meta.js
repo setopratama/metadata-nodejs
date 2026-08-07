@@ -108,6 +108,51 @@ export function buildExifView(model, dims, iptcData) {
   const width = val(ex, exif.T.PixelX) || (dims && dims.w) || null;
   const height = val(ex, exif.T.PixelY) || (dims && dims.h) || null;
 
+  let keywords = (iptcData && iptcData.keywords) || [];
+  if (!keywords.length && model) {
+    const rawKw = val(ifd0, exif.T.XPKeywords);
+    if (rawKw) {
+      let str = "";
+      if (Buffer.isBuffer(rawKw)) {
+        str = rawKw.toString("utf16le").replace(/\0+$/g, "").trim();
+      } else if (Array.isArray(rawKw)) {
+        str = Buffer.from(rawKw).toString("utf16le").replace(/\0+$/g, "").trim();
+      } else if (typeof rawKw === "string") {
+        str = rawKw.trim();
+      }
+      if (str) {
+        keywords = str.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+      }
+    }
+  }
+
+  let title = (iptcData && iptcData.title) || val(ifd0, exif.T.ImageDescription) || null;
+  if (!title && model) {
+    const rawTitle = val(ifd0, exif.T.XPTitle);
+    if (rawTitle) {
+      if (Buffer.isBuffer(rawTitle)) title = rawTitle.toString("utf16le").replace(/\0+$/g, "").trim() || null;
+      else if (Array.isArray(rawTitle)) title = Buffer.from(rawTitle).toString("utf16le").replace(/\0+$/g, "").trim() || null;
+    }
+  }
+
+  let caption = (iptcData && iptcData.caption) || val(ifd0, exif.T.ImageDescription) || null;
+  if (!caption && model) {
+    const rawCap = val(ifd0, exif.T.XPComment);
+    if (rawCap) {
+      if (Buffer.isBuffer(rawCap)) caption = rawCap.toString("utf16le").replace(/\0+$/g, "").trim() || null;
+      else if (Array.isArray(rawCap)) caption = Buffer.from(rawCap).toString("utf16le").replace(/\0+$/g, "").trim() || null;
+    }
+  }
+
+  let author = (iptcData && iptcData.author) || val(ifd0, exif.T.Artist) || null;
+  if (!author && model) {
+    const rawAut = val(ifd0, exif.T.XPAuthor);
+    if (rawAut) {
+      if (Buffer.isBuffer(rawAut)) author = rawAut.toString("utf16le").replace(/\0+$/g, "").trim() || null;
+      else if (Array.isArray(rawAut)) author = Buffer.from(rawAut).toString("utf16le").replace(/\0+$/g, "").trim() || null;
+    }
+  }
+
   return {
     make: val(ifd0, exif.T.Make) || null,
     model: val(ifd0, exif.T.Model) || null,
@@ -115,7 +160,7 @@ export function buildExifView(model, dims, iptcData) {
     software: val(ifd0, exif.T.Software) || null,
     artist: val(ifd0, exif.T.Artist) || null,
     copyright: val(ifd0, exif.T.Copyright) || null,
-    description: val(ifd0, exif.T.ImageDescription) || null,
+    description: val(ifd0, exif.T.ImageDescription) || caption || null,
     orientation: val(ifd0, exif.T.Orientation) || null,
     dateTime: val(ifd0, exif.T.DateTime) || null,
     dateTimeOriginal: val(ex, exif.T.DateTimeOriginal) || null,
@@ -127,11 +172,11 @@ export function buildExifView(model, dims, iptcData) {
     width,
     height,
     gps,
-    // IPTC (Windows: Properties -> Details)
-    title: (iptcData && iptcData.title) || val(ifd0, exif.T.ImageDescription) || null,
-    keywords: (iptcData && iptcData.keywords) || [],
-    caption: (iptcData && iptcData.caption) || val(ifd0, exif.T.ImageDescription) || null,
-    author: (iptcData && iptcData.author) || null,
+    // IPTC & EXIF Metadata (Windows Details)
+    title,
+    keywords,
+    caption,
+    author,
   };
 }
 
@@ -214,8 +259,38 @@ export function applyEdits(model, opts, allowNoop = false) {
     }
   }
 
-  if (opts.title !== undefined && opts.title !== null && (opts.description === undefined || opts.description === null)) {
-    exif.setTag(model.ifd0, exif.T.ImageDescription, 2, String(opts.title));
+  if (opts.title !== undefined && opts.title !== null) {
+    const s = String(opts.title);
+    if (opts.description === undefined || opts.description === null) {
+      exif.setTag(model.ifd0, exif.T.ImageDescription, 2, s);
+    }
+    exif.setTag(model.ifd0, exif.T.XPTitle, 1, Buffer.from(s + "\0", "utf16le"));
+    touched = true;
+  }
+
+  if (opts.keywords !== undefined && opts.keywords !== null) {
+    const kwArr = Array.isArray(opts.keywords)
+      ? opts.keywords.map((s) => String(s).trim()).filter(Boolean)
+      : String(opts.keywords).split(",").map((s) => s.trim()).filter(Boolean);
+    const kwStr = kwArr.join(", ");
+    if (kwStr) {
+      exif.setTag(model.ifd0, exif.T.XPKeywords, 1, Buffer.from(kwStr + "\0", "utf16le"));
+    } else {
+      exif.removeTag(model.ifd0, exif.T.XPKeywords);
+    }
+    touched = true;
+  }
+
+  if (opts.caption !== undefined && opts.caption !== null) {
+    const s = String(opts.caption);
+    exif.setTag(model.ifd0, exif.T.XPComment, 1, Buffer.from(s + "\0", "utf16le"));
+    touched = true;
+  }
+
+  if (opts.author !== undefined && opts.author !== null) {
+    const s = String(opts.author);
+    exif.setTag(model.ifd0, exif.T.Artist, 2, s);
+    exif.setTag(model.ifd0, exif.T.XPAuthor, 1, Buffer.from(s + "\0", "utf16le"));
     touched = true;
   }
 

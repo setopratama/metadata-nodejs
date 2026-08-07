@@ -104,6 +104,9 @@ template. Kebutuhan: Node.js >= 16.
 
 ### Diperbaiki
 
+- **Kata kunci & Metadata PNG (EXIF XP Tags)**: Menambahkan dukungan tag EXIF Windows IFD0 (`XPKeywords` `0x9c9e`, `XPTitle` `0x9c9b`, `XPComment` `0x9c9c`, `XPAuthor` `0x9c9d`). Kata kunci dari `keyword.txt` serta judul/keterangan/penulis kini otomatis tersimpan ke EXIF IFD0 sehingga terbaca di Rincian File Windows maupun perintah `read` pada file JPEG dan PNG.
+- **Penyelarasan Pengurutan & Rename PNG**: Menggunakan *numeric natural sort* (`localeCompare(..., { numeric: true })`) untuk pengurutan file `auto`/`apply`, serta memperbaiki *fallback* penamaan pada `buildName()` agar template `{title}` pada file tanpa title tidak menghasilkan nama ekstensi kosong (`.png`).
+- **Restorasi Ekstensi Gambar**: Helper `isImageFilename()` dan `buildName()` kini otomatis merestorasi dan mengenali ekstensi gambar hasil pemotongan nama.
 - Edit IPTC tidak lagi menghapus resource 8BIM non-IPTC (thumbnail Photoshop,
   ResolutionInfo, dll.).
 - `--title ""` / `--keywords ""` kini benar-benar menghapus field IPTC (termasuk
@@ -123,4 +126,5 @@ template. Kebutuhan: Node.js >= 16.
 4. Format `keyword.txt` diubah: satu kata kunci per baris, baris kosong sebagai
    pemisah kelompok per foto.
 5. Perintah **`auto`** (`npm start`) + perubahan perilaku backup default.
-6. Pembersihan kode mati & penyelarasan dokumentasi (`README.md`, `AGENTS.md`).
+6. Dukungan tag EXIF Windows (`XPKeywords`, `XPTitle`, `XPComment`, `XPAuthor`) & *fallback* metadata PNG.
+7. Pembersihan kode mati & penyelarasan dokumentasi (`README.md`, `AGENTS.md`, `CHANGELOG.md`).

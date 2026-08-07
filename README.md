@@ -6,7 +6,7 @@ CLI (aplikasi baris perintah) untuk **membaca & mengubah metadata foto** dan
 
 > Catatan: Metadata **EXIF** (kamera, tanggal, GPS, dll.) didukung untuk file
 > **JPEG** (`.jpg` / `.jpeg`) dan **PNG** (`.png`). Metadata **IPTC** (judul, kata kunci,
-> keterangan, penulis) didukung untuk file **JPEG** dan diselaraskan ke EXIF `ImageDescription` untuk **PNG**. File gambar lain tetap bisa di-rename.
+> keterangan, penulis) didukung untuk file **JPEG** dan diselaraskan ke EXIF `XPKeywords` & `ImageDescription` untuk **PNG**. File gambar lain tetap bisa di-rename.
 
 ## Fitur Utama
 

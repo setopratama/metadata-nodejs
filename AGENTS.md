@@ -89,10 +89,10 @@ Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js`). `rename.js` 
      sebagai `others[]` di `readIptcFromApp13()` dan ditulis ulang oleh
      `buildIptcApp13(fields, others)`. Bila tidak ada APP13, segmen baru disisipkan
      setelah SOI.
-   - **Kesesuaian PNG & Fallback EXIF**: `applyEdits()` menyelaraskan `opts.title` ke tag EXIF `ImageDescription` (`0x010e`) pada IFD0. `buildExifView()` menggunakan `ImageDescription` sebagai *fallback* untuk `title` dan `caption` jika IPTC tidak tersedia (seperti pada file PNG).
+   - **Kesesuaian PNG & Fallback EXIF**: `applyEdits()` menyelaraskan `opts.title`, `opts.keywords`, `opts.caption`, dan `opts.author` ke tag EXIF IFD0 (`XPKeywords` `0x9c9e`, `XPTitle` `0x9c9b`, `XPComment` `0x9c9c`, `XPAuthor` `0x9c9d`, serta `ImageDescription` `0x010e`). `buildExifView()` membaca data IPTC terlebih dahulu dan menggunakan tag EXIF XP tersebut sebagai *fallback* jika IPTC tidak tersedia (seperti pada file PNG).
    - Menghapus field: `--title ""` / `--keywords ""` menghapus field tersebut.
-     Bila SEMUA field IPTC kosong dan tidak ada resource lain, `buildIptcApp13`
-     mengembalikan null dan `editFile` membuang seluruh segmen APP13.
+     Bila SEMUA field IPTC/EXIF kosong dan tidak ada resource lain, `buildIptcApp13`
+     mengembalikan null dan `editFile` membuang segmen APP13 serta tag terkait.
 4c. **`strip` menghapus EXIF (APP1) + IPTC (APP13 Photoshop) + XMP (APP1)** —
    tujuan utamanya privasi. Jangan mengurangi cakupan ini tanpa alasan kuat.
    `removeExif`/`removeIptc`/`removeXmp` mengembalikan `null` bila segmen tidak ada.

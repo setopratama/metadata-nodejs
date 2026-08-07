@@ -39,6 +39,11 @@ export const T = {
   PixelX: 0xa002,
   PixelY: 0xa003,
   LensModel: 0xa434,
+  XPTitle: 0x9c9b,
+  XPComment: 0x9c9c,
+  XPAuthor: 0x9c9d,
+  XPKeywords: 0x9c9e,
+  XPSubject: 0x9c9f,
   GPSS: {
     VersionID: 0x0000,
     LatRef: 0x0001,
@@ -131,6 +136,7 @@ function encodeValue(type, value, e) {
     }
     case 1:
     case 6: {
+      if (Buffer.isBuffer(value)) return Buffer.from(value);
       const a = Array.isArray(value) ? value : [value];
       return Buffer.from(a);
     }
