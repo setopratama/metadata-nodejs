@@ -1,0 +1,445 @@
+// Antarmuka baris perintah (CLI) utama.
+import fs from "node:fs";
+import path from "node:path";
+import * as utils from "./utils.js";
+import * as meta from "./meta.js";
+import * as renameMod from "./rename.js";
+import { runSelftest } from "../test/selftest.js";
+
+export const VERSION = "1.0.0";
+
+const BOOLEAN_OPTS = new Set([
+  "apply", "json", "touch", "no-backup", "remove-gps", "help", "version", "no-color",
+]);
+
+function parseArgs(argv) {
+  const files = [];
+  const opts = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "-h" || a === "--help") opts.help = true;
+    else if (a === "-v" || a === "--version") opts.version = true;
+    else if (a.startsWith("--")) {
+      let name = a.slice(2);
+      let value;
+      const eq = name.indexOf("=");
+      if (eq >= 0) {
+        value = name.slice(eq + 1);
+        name = name.slice(0, eq);
+      }
+      if (BOOLEAN_OPTS.has(name)) {
+        opts[name] = eq >= 0 ? value !== "false" : true;
+      } else {
+        if (value === undefined) value = argv[++i];
+        if (value === undefined) throw new Error("Opsi --" + name + " membutuhkan nilai.");
+        opts[name] = value;
+      }
+    } else {
+      files.push(a);
+    }
+  }
+  return { files, opts };
+}
+
+function usage() {
+  utils.info(utils.bold("imgmeta v" + VERSION + " - ubah metadata foto & rename file (tanpa dependensi)"));
+  utils.info("");
+  utils.info("Pemakaian: node index.js <perintah> [file...] [opsi]");
+  utils.info("");
+  utils.info("Perintah:");
+  utils.info("  auto       Proses otomatis: ubah metadata (title & keyword) sekaligus rename file sesuai title");
+  utils.info("  read       Baca metadata foto (EXIF & IPTC)");
+  utils.info("  edit       Ubah metadata (tanggal, GPS, artis, judul, tag, dll.)");
+  utils.info("  apply      Terapkan judul/deskripsi & kata kunci dari file daftar (title.txt, keyword.txt)");
+  utils.info("  strip      Hapus semua metadata (EXIF, IPTC, XMP)");
+  utils.info("  rename     Rename file batch dengan template");
+  utils.info("  selftest   Jalankan pengujian internal");
+  utils.info("");
+  utils.info(utils.cyan("auto:"));
+  utils.info('  node index.js auto "foto/*.jpg"');
+  utils.info("  Secara otomatis membaca title.txt & keyword.txt, mengubah metadata IPTC, dan meng-ganti nama file ke judulnya.");
+  utils.info("");
+  utils.info(utils.cyan("apply:"));
+  utils.info('  node index.js apply "*.jpg" --titles title.txt --keywords-file keyword.txt');
+  utils.info("  title.txt:   satu baris per foto -> Judul + Deskripsi foto ke-N (file diurutkan).");
+  utils.info("  keyword.txt: satu kata kunci per baris; baris kosong memisahkan kelompok per foto.");
+  utils.info("  Baris kosong di title.txt = field dibiarkan. Backup .bak dibuat otomatis.");
+  utils.info("");
+  utils.info(utils.cyan("read:"));
+  utils.info("  node index.js read foto1.jpg foto2.jpg [--json]");
+  utils.info("");
+  utils.info(utils.cyan("edit:"));
+  utils.info('  node index.js edit foto.jpg --date "2020-01-15 08:30:00" --artist "Budi"');
+  utils.info("");
+  utils.info(utils.cyan("strip:"));
+  utils.info("  node index.js strip foto.jpg [--no-backup]");
+  utils.info("");
+  utils.info(utils.cyan("rename:"));
+  utils.info('  node index.js rename "*.jpg" --template "{date:YYYYMMDD}_{seq:3}" [--apply] [--start 1]');
+  utils.info("  Template: {name} {ext} {folder} {make} {model} {lens} {artist}");
+  utils.info("            {copyright} {description} {software} {title} {keywords}");
+  utils.info("            {width} {height} {seq} {seq:3} {date} {date:YYYYMMDD_HHmmss}");
+  utils.info("  {date} default: YYYY-MM-DD_HHmmss (dari EXIF, fallback ke tanggal file)");
+  utils.info("  Ekstensi asli otomatis ditambahkan bila template tidak memuat {ext}");
+  utils.info("  Default hanya menampilkan rencana; gunakan --apply untuk mengeksekusi.");
+  utils.info("");
+}
+
+// ---------- read ----------
+function fmtExposure(r) {
+  if (!r || !r.d) return "-";
+  return exifFmtRational(r) + " s";
+}
+
+function exifFmtRational(r) {
+  if (!r || !r.d) return "-";
+  if (r.d === 1) return String(r.n);
+  if (r.n === 1) return "1/" + r.d;
+  return (r.n / r.d).toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function fmtGps(gps) {
+  if (!gps) return "-";
+  let s = Math.abs(gps.lat).toFixed(6) + " " + gps.latRef + ", " + Math.abs(gps.lon).toFixed(6) + " " + gps.lonRef;
+  if (gps.alt != null) s += " (" + gps.alt + " m)";
+  if (gps.dateStamp) s += " [" + gps.dateStamp + "]";
+  return s;
+}
+
+function printRead(file, r, view) {
+  utils.info("");
+  utils.info(utils.bold(file));
+  if (!r.isJpeg && !r.isPng) {
+    utils.warn("Format tidak didukung (metadata EXIF hanya didukung untuk JPEG dan PNG).");
+    return;
+  }
+  if (r.exifError) utils.warn("Gagal membaca sebagian EXIF: " + r.exifError);
+
+  const rows = [];
+  if (view) {
+    const cam = [view.make, view.model].filter(Boolean).join(" ");
+    rows.push(["Kamera", cam || "-"]);
+    rows.push(["Lensa", view.lens || "-"]);
+    rows.push(["Software", view.software || "-"]);
+    rows.push(["Artis", view.artist || "-"]);
+    rows.push(["Deskripsi", view.description || "-"]);
+    rows.push(["Hak cipta", view.copyright || "-"]);
+    rows.push(["Judul", view.title || "-"]);
+    rows.push(["Kata kunci", view.keywords && view.keywords.length ? view.keywords.join(", ") : "-"]);
+    rows.push(["Keterangan", view.caption || "-"]);
+    rows.push(["Penulis", view.author || "-"]);
+    if (view.orientation) {
+      rows.push(["Orientasi", view.orientation + " (" + (meta.ORIENTATION_LABELS[view.orientation] || "?") + ")"]);
+    }
+    rows.push(["Eksposur", view.exposureTime ? fmtExposure(view.exposureTime) : "-"]);
+    rows.push(["Diafragma", view.fNumber ? "f/" + exifFmtRational(view.fNumber) : "-"]);
+    rows.push(["ISO", view.iso != null ? String(view.iso) : "-"]);
+    rows.push(["Panjang fokus", view.focalLength ? exifFmtRational(view.focalLength) + " mm" : "-"]);
+    rows.push(["GPS", fmtGps(view.gps)]);
+  }
+  if (!r.exifPresent) rows.push(["EXIF", "(tidak ada)"]);
+  const dims = view && view.width ? view.width + " x " + view.height : r.dims ? r.dims.w + " x " + r.dims.h : "-";
+  rows.push(["Dimensi", dims]);
+  rows.push(["Ukuran file", utils.fmtBytes(r.size)]);
+  for (const [k, v] of rows) {
+    if (v !== undefined && v !== null && v !== "") utils.info("  " + k.padEnd(16) + ": " + v);
+  }
+}
+
+function cmdRead(files, opts) {
+  if (!files.length) throw new Error("Perintah read membutuhkan minimal 1 file. Contoh: node index.js read foto.jpg");
+  const list = renameMod.expandFiles(files);
+  if (!list.length) throw new Error("Tidak ada file yang ditemukan.");
+  const jsonOut = [];
+  for (const f of list) {
+    const r = meta.readFileMeta(f);
+    const view = r.model || r.iptc ? meta.buildExifView(r.model, r.dims, r.iptc) : null;
+    if (opts.json) {
+      jsonOut.push({
+        file: f,
+        isJpeg: r.isJpeg,
+        dims: r.dims,
+        exifPresent: r.exifPresent,
+        metadata: view,
+        error: r.exifError || null,
+      });
+    } else {
+      printRead(f, r, view);
+    }
+  }
+  if (opts.json) console.log(JSON.stringify(jsonOut, null, 2));
+}
+
+// ---------- edit / strip ----------
+function viewDiff(before, after) {
+  const keys = [
+    ["make", "Kamera"], ["model", "Model"], ["lens", "Lensa"], ["software", "Software"],
+    ["artist", "Artis"], ["copyright", "Hak cipta"], ["description", "Deskripsi"],
+    ["title", "Judul"], ["keywords", "Kata kunci"], ["caption", "Keterangan"], ["author", "Penulis"],
+    ["orientation", "Orientasi"], ["dateTime", "Tanggal (IFD0)"],
+    ["dateTimeOriginal", "Tanggal asli"], ["dateTimeDigitized", "Tanggal digital"],
+  ];
+  const out = [];
+  if (!before || !after) return out;
+  for (const [k, label] of keys) {
+    const a = before[k];
+    const b = after[k];
+    const sA = a == null ? "-" : String(a);
+    const sB = b == null ? "-" : String(b);
+    if (sA !== sB) out.push([label, sA, sB]);
+  }
+  const gA = before.gps, gB = after.gps;
+  const sA = fmtGps(gA), sB = fmtGps(gB);
+  if (sA !== sB) out.push(["GPS", sA, sB]);
+  return out;
+}
+
+function printEditResult(res) {
+  utils.info("");
+  utils.info(utils.bold(res.file) + (res.backup ? utils.gray("  (cadangan: .bak)") : ""));
+  const diffs = viewDiff(res.before, res.after);
+  if (!diffs.length) {
+    utils.info("  Tidak ada perubahan terdeteksi.");
+    return;
+  }
+  for (const [label, oldV, newV] of diffs) {
+    utils.info("  " + label.padEnd(16) + ": " + utils.gray(oldV) + "  ->  " + utils.green(newV));
+  }
+}
+
+function cmdEdit(files, opts) {
+  if (!files.length) throw new Error("Perintah edit membutuhkan minimal 1 file.");
+  const list = renameMod.expandFiles(files);
+  if (!list.length) throw new Error("Tidak ada file yang ditemukan.");
+
+  const hasChanges = [
+    "date", "gps", "gps-alt", "gps-time", "remove-gps", "make", "model", "lens",
+    "software", "artist", "copyright", "description", "orientation",
+    "title", "keywords", "caption", "author",
+  ].some((k) => opts[k] !== undefined && opts[k] !== null);
+  if (!hasChanges) {
+    throw new Error("Tidak ada perubahan yang diminta. Contoh: node index.js edit foto.jpg --date \"2020-01-15 08:30:00\"");
+  }
+
+  for (const f of list) {
+    try {
+      printEditResult(meta.editFile(f, opts));
+    } catch (e) {
+      utils.err(f + ": " + e.message);
+    }
+  }
+}
+
+function cmdStrip(files, opts) {
+  if (!files.length) throw new Error("Perintah strip membutuhkan minimal 1 file.");
+  const list = renameMod.expandFiles(files);
+  if (!list.length) throw new Error("Tidak ada file yang ditemukan.");
+  for (const f of list) {
+    try {
+      const r = meta.stripFile(f, opts);
+      utils.info("");
+      utils.info(utils.bold(f));
+      utils.info(r.stripped ? "  Metadata foto dihapus (EXIF/IPTC/XMP)." : "  Tidak ada metadata foto.");
+    } catch (e) {
+      utils.err(f + ": " + e.message);
+    }
+  }
+}
+
+// ---------- apply (judul/deskripsi & kata kunci dari file daftar) ----------
+/** Baca file teks menjadi daftar baris. */
+function readLines(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error("File daftar tidak ditemukan: " + filePath);
+  }
+  return fs.readFileSync(filePath, "utf8").split(/\r?\n/).map((s) => s.trim());
+}
+
+/** Filter judul non-kosong agar selaras dengan kelompok kata kunci. */
+function parseTitles(lines) {
+  return lines.map((s) => String(s).trim()).filter(Boolean);
+}
+
+/**
+ * Terapkan judul/deskripsi (dari title.txt) dan kata kunci (dari keyword.txt)
+ * secara batch. Baris ke-N dipakai untuk file ke-N (file diurutkan berdasarkan
+ * nama). title.txt: satu baris per foto (baris kosong pemisah diabaikan). keyword.txt:
+ * satu kata kunci per baris atau dipisah koma per kelompok foto.
+ */
+function cmdApply(files, opts) {
+  if (!files.length) throw new Error("Perintah apply membutuhkan minimal 1 file/glob/direktori.");
+  if (!opts.titles && !opts["keywords-file"]) {
+    throw new Error("Berikan --titles <file> dan/atau --keywords-file <file>.");
+  }
+
+  const list = renameMod.expandFiles(files).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+  );
+  if (!list.length) throw new Error("Tidak ada file yang ditemukan.");
+
+  const titles = opts.titles ? parseTitles(readLines(opts.titles)) : null;
+  const keywordGroups = opts["keywords-file"]
+    ? utils.parseKeywordGroups(readLines(opts["keywords-file"]))
+    : null;
+  const noBackup = opts["no-backup"] === true;
+
+  utils.info("Menerapkan judul & kata kunci dari file daftar...");
+  let applied = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  list.forEach((f, i) => {
+    const editOpts = {};
+    if (titles && i < titles.length && titles[i] !== "") {
+      editOpts.title = titles[i];
+      editOpts.caption = titles[i]; // deskripsi memakai baris yang sama
+      editOpts.description = titles[i];
+    }
+    if (keywordGroups && i < keywordGroups.length && keywordGroups[i].length) {
+      editOpts.keywords = keywordGroups[i]; // array utuh; collectIptcEdits menerima array
+    }
+    if (!Object.keys(editOpts).length) {
+      utils.warn(path.basename(f) + ": tidak ada baris untuk file ini — dilewati.");
+      skipped += 1;
+      return;
+    }
+    if (noBackup) editOpts["no-backup"] = true;
+    try {
+      printEditResult(meta.editFile(f, editOpts));
+      applied += 1;
+    } catch (e) {
+      utils.err(f + ": " + e.message);
+      failed += 1;
+    }
+  });
+
+  if (titles && titles.length > list.length) {
+    utils.warn(
+      (opts.titles || "title.txt") + " memiliki " + (titles.length - list.length) +
+      " judul lebih banyak dari jumlah file — kelebihan diabaikan."
+    );
+  }
+  if (keywordGroups && keywordGroups.length > list.length) {
+    utils.warn(
+      "keyword.txt memiliki " + (keywordGroups.length - list.length) +
+      " kelompok lebih banyak dari jumlah file — kelebihan diabaikan."
+    );
+  }
+
+  utils.info("");
+  utils.info(
+    utils.green("Selesai: " + applied + " diproses, " + skipped + " dilewati, " + failed + " gagal.")
+  );
+}
+
+// ---------- auto (proses otomatis: apply title/keyword + rename sesuai title) ----------
+function cmdAuto(files, opts) {
+  const targetFiles = files.length ? files : ["foto"];
+  const list = renameMod.expandFiles(targetFiles).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+  );
+  if (!list.length) throw new Error("Tidak ada file yang ditemukan.");
+
+  const titleFile = opts.titles || "title.txt";
+  const keywordFile = opts["keywords-file"] || "keyword.txt";
+
+  const titles = fs.existsSync(titleFile) ? parseTitles(readLines(titleFile)) : null;
+  let keywordGroups = null;
+  if (fs.existsSync(keywordFile)) {
+    keywordGroups = utils.parseKeywordGroups(readLines(keywordFile));
+  }
+
+  utils.info("Proses otomatis: menerapkan metadata & mengganti nama file...");
+
+  list.forEach((f, i) => {
+    const editOpts = { "no-backup": true };
+    let newTitle = null;
+
+    if (titles && i < titles.length && titles[i] !== "") {
+      newTitle = titles[i];
+      editOpts.title = newTitle;
+      editOpts.caption = newTitle;
+      editOpts.description = newTitle;
+    }
+    if (keywordGroups && i < keywordGroups.length) {
+      editOpts.keywords = keywordGroups[i];
+    }
+
+    // 1. Terapkan metadata jika ada
+    if (Object.keys(editOpts).length > 1) {
+      try {
+        printEditResult(meta.editFile(f, editOpts));
+      } catch (e) {
+        utils.err(f + ": gagal edit metadata (" + e.message + ")");
+      }
+    }
+
+    // 2. Rename file sesuai title jika ada title baru
+    if (newTitle) {
+      const freshMeta = meta.readFileMeta(f);
+      const target = renameMod.buildName(f, "{title}", i + 1, freshMeta);
+      const oldName = path.basename(f);
+      const newName = path.basename(target);
+      if (newName.toLowerCase() !== oldName.toLowerCase()) {
+        const uniqueTarget = utils.ensureUniqueTarget(target, new Set(), f);
+        try {
+          fs.renameSync(f, uniqueTarget);
+          utils.info("   Rename: " + oldName + " -> " + utils.green(path.basename(uniqueTarget)));
+        } catch (e) {
+          utils.err(oldName + ": gagal rename (" + e.message + ")");
+        }
+      }
+    }
+  });
+
+  utils.info("");
+  utils.info(utils.green("Selesai diproses!"));
+}
+
+// ---------- rename ----------
+function cmdRename(files, opts) {
+  if (!files.length) throw new Error("Perintah rename membutuhkan minimal 1 file/glob/direktori.");
+  if (!opts.template) throw new Error("Opsi --template wajib diisi. Contoh: --template \"{date:YYYYMMDD}_{seq:3}\"");
+  const list = renameMod.expandFiles(files);
+  if (!list.length) throw new Error("Tidak ada file yang ditemukan.");
+  const start = opts.start ? parseInt(opts.start, 10) || 1 : 1;
+  renameMod.runRename(list, opts.template, { apply: Boolean(opts.apply), start });
+}
+
+// ---------- entry point ----------
+export function run(argv) {
+  try {
+    const { files, opts } = parseArgs(argv);
+    if (opts["no-color"]) utils.setColor(false);
+
+    const cmd = files.shift() || "auto";
+    if (opts.help || cmd === "-h") return usage();
+    if (opts.version || cmd === "version") return console.log("imgmeta v" + VERSION);
+
+    switch (cmd) {
+      case "auto":
+      case "process":
+        return cmdAuto(files, opts);
+      case "read":
+        return cmdRead(files, opts);
+      case "edit":
+        return cmdEdit(files, opts);
+      case "apply":
+        return cmdApply(files, opts);
+      case "strip":
+        return cmdStrip(files, opts);
+      case "rename":
+        return cmdRename(files, opts);
+      case "selftest":
+        return runSelftest();
+      default:
+        utils.err("Perintah tidak dikenal: " + cmd);
+        usage();
+        process.exitCode = 1;
+    }
+  } catch (e) {
+    utils.err(e.message);
+    utils.info("Gunakan: node index.js --help");
+    process.exitCode = 1;
+  }
+}

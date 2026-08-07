@@ -1,0 +1,23 @@
+# Folder kerja foto (jangan di-commit)
+foto/
+
+# File daftar judul & kata kunci (data pribadi pengguna)
+title.txt
+keyword.txt
+
+# Cadangan backup yang dibuat perintah edit/strip/auto (--no-backup=false)
+*.bak
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# File log
+*.log
+
+# File sistem operasi
+Thumbs.db
+Desktop.ini
+.DS_Store
