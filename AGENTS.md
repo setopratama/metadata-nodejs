@@ -48,8 +48,9 @@ src/
                     judul (2:05), kata kunci (2:25), keterangan (2:120), penulis (2:80)
   meta.js           Lapisan tinggi: readFileMeta, buildExifView, applyEdits, editFile, stripFile
   rename.js         expandFiles (file/glob/direktori) + buildName + runRename (batch)
-  utils.js          Warna ANSI, log, tanggal EXIF, sanitasi nama Windows, glob,
-                    ensureUniqueTarget, parseKeywordGroups (kelompok kata kunci apply)
+  utils.js          Warna ANSI, log (termasuk logFailure → imgmeta.log), tanggal EXIF,
+                    sanitasi nama Windows, glob, ensureUniqueTarget,
+                    parseKeywordGroups (kelompok kata kunci apply)
   tinyjpeg.js       Encoder JPEG grayscale 8x8 (HANYA untuk pengujian/selftest)
 test/
   selftest.js       Pengujian round-trip; dipanggil lewat perintah "selftest"
@@ -129,6 +130,14 @@ Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js`). `rename.js` 
 - Error: CLI menangkap error di `run()` → `utils.err(e.message)` + `process.exitCode = 1`.
   Perintah per-file (edit/strip) memakai try/catch di dalam loop agar satu file gagal
   tidak menghentikan batch.
+- **Log kegagalan**: setiap kegagalan (rename, edit/apply/auto, strip, ekspansi
+  file, error global) dicatat ke `imgmeta.log` di cwd lewat
+  `utils.logFailure(operation, file, message)` — format `[tanggal] [operasi] file — pesan`,
+  mode append, tanpa dependensi. Panggil di setiap blok catch; jangan menghentikan
+  proses bila log gagal ditulis. `logFailure` juga mengumpulkan kegagalan sesi
+  (`utils.getFailures()` / `utils.resetFailures()`); `run()` di `cli.js` memanggil
+  `utils.resetFailures()` di awal dan menampilkan ringkasannya lewat
+  `printFailureSummary()` di akhir perintah (kecuali `--json`).
 - Output: `utils.info` (stdout), `utils.err` (stderr), `utils.warn`. Warna ANSI lewat
   `utils.green/yellow/...` — hormati `--no-color` / `NO_COLOR`.
 - Parser memakai `Buffer` subarray & `readUInt16LE/BE` — perhatikan endianness.
@@ -143,7 +152,10 @@ Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js`). `rename.js` 
 - **Token template baru**: tambahkan ke `tokens` di `buildName()` (src/rename.js),
   dokumentasikan di `README.md` dan `usage()`.
 - **Perintah baru**: tambah case di `run()` (src/cli.js), fungsi `cmd*`, dan baris
-  di `usage()`.
+  di `usage()`. Catat kegagalannya ke `utils.logFailure()`.
+- **Log kegagalan**: saat menambah titik kegagalan baru (perintah, rename, parser),
+  panggil `utils.logFailure(operation, file, message)` di blok catch-nya dan
+  dokumentasikan di `README.md` / `usage()` bila ada operasi baru.
 - **Selftest**: tambahkan kasus di `test/selftest.js` (round-trip wajib untuk fitur
   baca/tulis metadata).
 - **Changelog**: catat perubahan di `CHANGELOG.md` dengan kategori yang sesuai

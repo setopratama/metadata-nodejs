@@ -29,6 +29,7 @@ export function expandFiles(args, opts = {}) {
         entries = fs.readdirSync(dir || ".");
       } catch (e) {
         utils.warn("Tidak dapat membaca " + (dir || ".") + ": " + e.message);
+        utils.logFailure("expand", dir || ".", "tidak dapat membaca direktori: " + e.message);
         continue;
       }
       const re = utils.globToRegExp(pattern);
@@ -42,6 +43,7 @@ export function expandFiles(args, opts = {}) {
         st = fs.statSync(arg);
       } catch (e) {
         utils.warn("Tidak ditemukan: " + arg);
+        utils.logFailure("expand", arg, "file/direktori tidak ditemukan");
         continue;
       }
       if (st.isDirectory()) {
@@ -50,6 +52,7 @@ export function expandFiles(args, opts = {}) {
           entries = fs.readdirSync(arg);
         } catch (e) {
           utils.warn("Tidak dapat membaca direktori: " + arg);
+          utils.logFailure("expand", arg, "tidak dapat membaca direktori: " + e.message);
           continue;
         }
         for (const name of entries) {
@@ -152,6 +155,7 @@ export function runRename(files, template, options = {}) {
       fileMeta = readFileMeta(file);
     } catch (e) {
       utils.warn(path.basename(file) + ": tidak dapat dibaca (" + e.message + ")");
+      utils.logFailure("rename", file, "tidak dapat dibaca: " + e.message);
       result.failed += 1;
       return;
     }
@@ -162,6 +166,7 @@ export function runRename(files, template, options = {}) {
       target = buildName(file, template, idx, fileMeta);
     } catch (e) {
       utils.err(oldName + ": " + e.message);
+      utils.logFailure("rename", file, "gagal menyusun nama target: " + e.message);
       result.failed += 1;
       return;
     }
@@ -193,6 +198,7 @@ export function runRename(files, template, options = {}) {
         tmpItems.push({ tmpPath, target: item.target, oldName: item.oldName });
       } catch (e) {
         utils.err(item.oldName + ": gagal membuat nama sementara (" + e.message + ")");
+        utils.logFailure("rename", item.file, "gagal membuat nama sementara: " + e.message);
         result.failed += 1;
       }
     }
@@ -203,6 +209,7 @@ export function runRename(files, template, options = {}) {
         result.renamed += 1;
       } catch (e) {
         utils.err(item.oldName + ": gagal mengganti nama (" + e.message + ")");
+        utils.logFailure("rename", item.tmpPath, "gagal mengganti nama menjadi " + item.target + ": " + e.message);
         result.failed += 1;
       }
     }

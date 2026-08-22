@@ -6,7 +6,25 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 Jenis perubahan: **Ditambahkan** (Added), **Diubah** (Changed), **Dihapus** (Removed),
 **Diperbaiki** (Fixed).
 
-Versi mengikuti `package.json` / `VERSION` di `src/cli.js` (saat ini **v1.0.0**).
+Versi mengikuti `package.json` / `VERSION` di `src/cli.js` (saat ini **v1.1.0**).
+
+## [1.1.0] - 2026-08-18
+
+### Ditambahkan
+
+- **Log kegagalan ke file `imgmeta.log`**: setiap kegagalan operasi (rename,
+  ubah metadata `edit`/`apply`/`auto`, `strip`, ekspansi file, serta error
+  global CLI) dicatat dalam mode *append* ke `imgmeta.log` di folder tempat
+  perintah dijalankan. Format tiap baris:
+  `[YYYY-MM-DD HH:mm:ss] [operasi] file — pesan`. Implementasi murni di
+  `utils.logFailure()` (tanpa dependensi); kegagalan menulis log tidak
+  menghentikan proses.
+- **Ringkasan log langsung di layar**: di akhir setiap perintah, `run()`
+  menampilkan ringkasan kegagalan sesi berjalan — bila ada error, baris-baris
+  log dicetak beserta lokasi `imgmeta.log`; bila bersih, muncul pesan
+  *"Log kegagalan: tidak ada error."* (dilewati untuk `read --json`).
+  Implementasi: `utils.resetFailures()`/`utils.getFailures()` di `src/utils.js`
+  dan `printFailureSummary()` di `src/cli.js`.
 
 ## [1.0.0] - 2026-08-08
 

@@ -6,7 +6,7 @@ import * as meta from "./meta.js";
 import * as renameMod from "./rename.js";
 import { runSelftest } from "../test/selftest.js";
 
-export const VERSION = "1.0.0";
+export const VERSION = "1.1.0";
 
 const BOOLEAN_OPTS = new Set([
   "apply", "json", "touch", "no-backup", "remove-gps", "help", "version", "no-color",
@@ -82,6 +82,11 @@ function usage() {
   utils.info("  {date} default: YYYY-MM-DD_HHmmss (dari EXIF, fallback ke tanggal file)");
   utils.info("  Ekstensi asli otomatis ditambahkan bila template tidak memuat {ext}");
   utils.info("  Default hanya menampilkan rencana; gunakan --apply untuk mengeksekusi.");
+  utils.info("");
+  utils.info(utils.cyan("Log kegagalan:"));
+  utils.info("  Setiap kegagalan (rename, ubah metadata, strip, dll.) dicatat ke imgmeta.log");
+  utils.info("  di folder tempat perintah dijalankan, format: [tanggal] [operasi] file — pesan.");
+  utils.info("  Di akhir perintah, ringkasan log langsung ditampilkan (atau \"tidak ada error\").");
   utils.info("");
 }
 
@@ -226,6 +231,7 @@ function cmdEdit(files, opts) {
       printEditResult(meta.editFile(f, opts));
     } catch (e) {
       utils.err(f + ": " + e.message);
+      utils.logFailure("edit", f, e.message);
     }
   }
 }
@@ -242,6 +248,7 @@ function cmdStrip(files, opts) {
       utils.info(r.stripped ? "  Metadata foto dihapus (EXIF/IPTC/XMP)." : "  Tidak ada metadata foto.");
     } catch (e) {
       utils.err(f + ": " + e.message);
+      utils.logFailure("strip", f, e.message);
     }
   }
 }
@@ -356,6 +363,7 @@ function cmdApply(files, opts) {
       applied += 1;
     } catch (e) {
       utils.err(f + ": " + e.message);
+      utils.logFailure("apply", f, e.message);
       failed += 1;
     }
   });
@@ -415,6 +423,7 @@ function cmdAuto(files, opts) {
         printEditResult(meta.editFile(f, editOpts));
       } catch (e) {
         utils.err(f + ": gagal edit metadata (" + e.message + ")");
+        utils.logFailure("auto", f, "gagal edit metadata: " + e.message);
       }
     }
   });
@@ -437,40 +446,70 @@ function cmdRename(files, opts) {
   renameMod.runRename(list, opts.template, { apply: Boolean(opts.apply), start });
 }
 
+// ---------- ringkasan log kegagalan ----------
+/** Tampilkan ringkasan kegagalan sesi berjalan di akhir perintah. */
+function printFailureSummary(opts = {}) {
+  if (opts.json) return; // jangan mengotori output JSON (read --json)
+  const failures = utils.getFailures();
+  utils.info("");
+  if (!failures.length) {
+    utils.info(utils.gray("Log kegagalan: tidak ada error."));
+    return;
+  }
+  utils.info(utils.red("Log kegagalan (" + failures.length + " error, tersimpan di " + utils.LOG_FILE + "):"));
+  for (const line of failures) utils.info("  " + line);
+}
+
 // ---------- entry point ----------
 export function run(argv) {
+  let opts = {};
   try {
-    const { files, opts } = parseArgs(argv);
+    const parsed = parseArgs(argv);
+    const files = parsed.files;
+    opts = parsed.opts;
     if (opts["no-color"]) utils.setColor(false);
 
     const cmd = files.shift() || "auto";
     if (opts.help || cmd === "-h") return usage();
     if (opts.version || cmd === "version") return console.log("imgmeta v" + VERSION);
 
+    utils.resetFailures();
+
     switch (cmd) {
       case "auto":
       case "process":
-        return cmdAuto(files, opts);
+        cmdAuto(files, opts);
+        break;
       case "read":
-        return cmdRead(files, opts);
+        cmdRead(files, opts);
+        break;
       case "edit":
-        return cmdEdit(files, opts);
+        cmdEdit(files, opts);
+        break;
       case "apply":
-        return cmdApply(files, opts);
+        cmdApply(files, opts);
+        break;
       case "strip":
-        return cmdStrip(files, opts);
+        cmdStrip(files, opts);
+        break;
       case "rename":
-        return cmdRename(files, opts);
+        cmdRename(files, opts);
+        break;
       case "selftest":
         return runSelftest();
       default:
         utils.err("Perintah tidak dikenal: " + cmd);
+        utils.logFailure("cli", "", "perintah tidak dikenal: " + cmd);
         usage();
         process.exitCode = 1;
     }
+
+    printFailureSummary(opts);
   } catch (e) {
     utils.err(e.message);
+    utils.logFailure("cli", "", e.message);
     utils.info("Gunakan: node index.js --help");
+    printFailureSummary(opts);
     process.exitCode = 1;
   }
 }

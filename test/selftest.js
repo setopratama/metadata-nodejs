@@ -1,5 +1,6 @@
 // Pengujian internal: memastikan encoder/parser/serializer EXIF bekerja benar.
 // Jalankan dengan: node index.js selftest
+import fs from "node:fs";
 import path from "node:path";
 import * as jpeg from "../src/jpeg.js";
 import * as png from "../src/png.js";
@@ -197,6 +198,33 @@ export function runSelftest() {
     path.normalize(unq1) === path.join("D:/Foto", "test (2).jpg"),
     "Bentrok nama target menggunakan format standar (2): " + path.basename(unq1)
   );
+
+  // 6. Log kegagalan ke file (utils.logFailure)
+  const logPath = path.join(process.cwd(), "imgmeta-selftest.log");
+  utils.logFailure("rename", "foto/a.jpg", "uji penulisan log", logPath);
+  utils.logFailure("edit", "foto/b.jpg", "uji append", logPath);
+  const logContent = fs.readFileSync(logPath, "utf8");
+  assert(
+    logContent.includes("[rename]") && logContent.includes("foto/a.jpg") && logContent.includes("uji penulisan log"),
+    "logFailure menulis baris kegagalan ke file log"
+  );
+  assert(
+    logContent.includes("[edit]") && logContent.includes("foto/b.jpg") && logContent.includes("uji append"),
+    "logFailure menambahkan baris baru (mode append)"
+  );
+  fs.unlinkSync(logPath);
+
+  // 6b. Kumpulan kegagalan sesi berjalan (untuk ringkasan di akhir perintah)
+  utils.resetFailures();
+  utils.logFailure("rename", "foto/c.jpg", "uji ringkasan", logPath);
+  const sesi = utils.getFailures();
+  assert(
+    sesi.length === 1 && sesi[0].includes("foto/c.jpg") && sesi[0].includes("[rename]"),
+    "getFailures menampilkan kegagalan sesi berjalan"
+  );
+  utils.resetFailures();
+  assert(utils.getFailures().length === 0, "resetFailures mengosongkan kegagalan sesi");
+  fs.unlinkSync(logPath);
 
   console.log("");
   if (fail === 0) {

@@ -19,6 +19,7 @@ CLI (aplikasi baris perintah) untuk **membaca & mengubah metadata foto** dan
 - 🏷️ **Rename Batch Berbasis Template (`rename`)**: Mengubah nama file secara masal dengan token dinamis `{title}`, `{keywords}`, `{artist}`, `{make}`, `{model}`, `{lens}`, `{date}`, `{date:FORMAT}`, `{seq}`, `{seq:N}`, `{folder}`, `{name}`, `{ext}`.
 - 🔒 **Sanitasi & Two-Pass Batch Rename**: Pembersihan otomatis karakter ilegal Windows/Linux, strategi *Two-Pass Rename* untuk mencegah bentrok palsu dengan nama file lama saat generate ulang, penanganan duplikat nyata (` (2)`, ` (3)`), serta *fallback* nama asli jika judul kosong.
 - 🛡️ **Pembersihan Metadata Privasi (`strip`)**: Menghapus seluruh metadata sensitif (EXIF, IPTC, XMP) dari foto.
+- 📋 **Log Kegagalan Otomatis**: Setiap kegagalan (rename, ubah metadata, strip, dll.) dicatat ke **`imgmeta.log`** di folder tempat perintah dijalankan — tidak perlu konfigurasi apa pun.
 - 🧪 **Pengujian Internal Terintegrasi (`selftest`)**: Pengujian mandiri untuk memverifikasi integritas pembacaan, penulisan, dan serialisasi metadata secara *round-trip*.
 - 📊 **Output JSON & Mode Simulasi**: Dukungan format JSON untuk pembacaan metadata (`read --json`) dan mode simulasi (*dry-run*) untuk perintah rename.
 
@@ -109,6 +110,25 @@ node index.js rename "foto/*.jpg" --template "{title}" --apply
 ```bash
 node index.js selftest
 ```
+
+### 8. Log Kegagalan (`imgmeta.log`)
+
+Setiap kegagalan operasi dicatat secara otomatis ke **`imgmeta.log`** di folder
+tempat perintah dijalankan (mode *append* — riwayat kegagalan sebelumnya tidak
+ditimpa):
+
+```text
+[2026-08-18 14:30:22] [rename] foto/liburan.jpg — tidak dapat dibaca: ENOENT...
+[2026-08-18 14:30:25] [edit] foto/rusak.jpg — Format tidak didukung (hanya JPEG dan PNG): ...
+```
+
+Operasi yang dicatat: `rename`, `edit`, `apply`, `auto`, `strip`, `expand`
+(file/glob/direktori tidak ditemukan), dan `cli` (error global). Jika folder
+tidak dapat ditulis, proses tetap berjalan dan peringatan ditampilkan di layar.
+
+**Di akhir setiap perintah**, ringkasan log kegagalan langsung ditampilkan di
+layar — bila ada error, baris-baris lognya dicetak beserta lokasi file
+`imgmeta.log`; bila bersih, muncul pesan *"Log kegagalan: tidak ada error."*.
 
 
 ## Struktur Proyek

@@ -37,6 +37,43 @@ export function err(msg) {
   console.error(red("ERROR ") + msg);
 }
 
+// --- Log kegagalan ke file ---
+// File log kegagalan, ditulis dalam mode append di folder tempat perintah dijalankan.
+export const LOG_FILE = path.join(process.cwd(), "imgmeta.log");
+
+// Kumpulan kegagalan pada sesi berjalan — dipakai untuk ringkasan di akhir perintah.
+let sessionFailures = [];
+
+/** Kosongkan kumpulan kegagalan sesi (dipanggil di awal run()). */
+export function resetFailures() {
+  sessionFailures = [];
+}
+
+/** Salinan kegagalan sesi berjalan (baris log apa adanya). */
+export function getFailures() {
+  return sessionFailures.slice();
+}
+
+/**
+ * Catat satu kegagalan ke file log (append) dan ke kumpulan sesi berjalan.
+ * Format baris: [YYYY-MM-DD HH:mm:ss] [operasi] file — pesan.
+ * Gagal menulis log tidak menghentikan proses — hanya dicetak ke stderr.
+ * @param {string} operation Operasi yang gagal: rename, edit, apply, auto, strip, expand, cli, dll.
+ * @param {string} file      Path file terkait (boleh kosong untuk kegagalan global)
+ * @param {string} message   Deskripsi kegagalan
+ * @param {string} logPath   Path file log (default LOG_FILE)
+ */
+export function logFailure(operation, file, message, logPath = LOG_FILE) {
+  const stamp = formatToken(new Date(), "YYYY-MM-DD HH:mm:ss");
+  const line = "[" + stamp + "] [" + operation + "] " + (file ? file + " — " : "") + message;
+  sessionFailures.push(line);
+  try {
+    fs.appendFileSync(logPath, line + "\n", "utf8");
+  } catch (e) {
+    console.error(red("ERROR ") + "Tidak dapat menulis log " + logPath + ": " + e.message);
+  }
+}
+
 // --- Angka / format ---
 const p2 = (n) => String(n).padStart(2, "0");
 const p4 = (n) => String(n).padStart(4, "0");
