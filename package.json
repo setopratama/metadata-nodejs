@@ -1,6 +1,6 @@
 {
   "name": "imgmeta",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "CLI untuk membaca/mengubah metadata (EXIF) foto dan rename file batch. Tanpa dependensi, cukup Node.js.",
   "type": "module",
   "bin": {
@@ -8,7 +8,8 @@
   },
   "scripts": {
     "selftest": "node index.js selftest",
-    "start": "node index.js"
+    "start": "node index.js",
+    "web": "node index.js web"
   },
   "engines": {
     "node": ">=16"

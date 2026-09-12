@@ -6,7 +6,21 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 Jenis perubahan: **Ditambahkan** (Added), **Diubah** (Changed), **Dihapus** (Removed),
 **Diperbaiki** (Fixed).
 
-Versi mengikuti `package.json` / `VERSION` di `src/cli.js` (saat ini **v1.1.0**).
+Versi mengikuti `package.json` / `VERSION` di `src/cli.js` (saat ini **v1.2.0**).
+
+## [1.2.0] - 2026-09-12
+
+### Ditambahkan
+
+- **Web UI Interaktif (`web`)**: Antarmuka grafis browser mandiri tanpa dependensi pihak ketiga menggunakan HTTP server bawaan Node.js (`src/server.js` & folder `public/`).
+- **Desain Sistem Industrial Minimalism**: Mengikuti acuan `DESIGN.md` (warm stone palette, sharp edges `border-radius: 0`, tipografi `Inter` & `IBM Plex Mono`, label uppercase, tampilan dokumen/arsip).
+- **Fitur Frontend Lengkap**:
+  - Pemilih direktori & penjelajah subfolder di dalam `foto/`.
+  - Multi-line textarea editor untuk Judul (`title.txt`) & Kata Kunci (`keyword.txt`) dengan sinkronisasi langsung dan penghitung baris/kelompok.
+  - Live preview visual diff (nama file asli `->` nama baru, judul, tag kata kunci, status badge).
+  - Tampilan ganda: Tabel Perbandingan dan Grid Galeri Kartu Foto.
+  - Eksekusi 1-klik untuk Auto Process (Metadata + Rename), Terapkan Metadata Saja, Rename Saja, atau Strip Metadata.
+  - Konsol log aktivitas real-time di antarmuka web.
 
 ## [1.1.0] - 2026-08-18
 

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IMGMETA — METADATA ENGINE & BATCH RENAME</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Industrial Navbar -->
+    <header class="top-nav">
+      <div class="nav-brand">
+        <span class="brand-badge">CLI / WEB ENGINE</span>
+        <h1 class="brand-title">IMGMETA</h1>
+        <span class="brand-sub">BATCH METADATA & RENAME SYSTEM</span>
+      </div>
+      <div class="nav-status">
+        <div class="status-item">
+          <span class="status-label">STATUS</span>
+          <span class="status-value status-online"><span class="dot"></span> ONLINE</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">ENGINE</span>
+          <span class="status-value font-mono">NODE.JS NATIVE (ZERO-DEP)</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Container Grid -->
+    <main class="main-content">
+      <!-- Left Panel: Folder Selection, Input Controls, and Actions -->
+      <section class="control-panel">
+        
+        <!-- Folder Selection Card -->
+        <div class="card folder-card">
+          <div class="card-header">
+            <h2 class="card-title">01. LOKASI FOLDER TARGET</h2>
+            <button id="btnRefreshFolders" class="btn-sm btn-secondary" title="Muat ulang folder">REFRESH</button>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label for="folderSelect" class="form-label">PILIH FOLDER / SUBFOLDER</label>
+              <div class="select-wrapper">
+                <select id="folderSelect" class="select-input font-mono">
+                  <option value="foto">foto/</option>
+                </select>
+              </div>
+              <div class="folder-meta-bar font-mono">
+                <span id="fileCountBadge">0 FILE GAMBAR</span>
+                <span id="folderPathText" class="text-truncate">foto/</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inputs Card: Titles & Keywords -->
+        <div class="card inputs-card">
+          <div class="card-header">
+            <h2 class="card-title">02. DATA METADATA BATCH</h2>
+            <div class="tab-group">
+              <button id="tabTitles" class="tab-btn active">JUDUL (TITLES)</button>
+              <button id="tabKeywords" class="tab-btn">KATA KUNCI (KEYWORDS)</button>
+            </div>
+          </div>
+          <div class="card-body">
+            
+            <!-- Pane 1: Titles -->
+            <div id="paneTitles" class="tab-pane active">
+              <div class="pane-toolbar">
+                <div class="count-indicator font-mono">
+                  <span id="titleLineCount">0</span> BARIS TERDETEKSI
+                </div>
+                <div class="toolbar-actions">
+                  <button id="btnLoadTitles" class="btn-xs btn-secondary">MUAT DARI FILE</button>
+                  <button id="btnSaveTitles" class="btn-xs btn-secondary">SIMPAN FILE</button>
+                </div>
+              </div>
+              <p class="field-hint">1 baris = 1 judul foto ke-N (Title, Caption & Dublin Core XMP).</p>
+              <textarea id="titleInput" class="editor-textarea font-mono" placeholder="Masukkan 1 judul per baris...&#10;Contoh:&#10;Surreal melting watch icon black and white design&#10;Patriotic bald eagle flat vector illustration" spellcheck="false"></textarea>
+            </div>
+
+            <!-- Pane 2: Keywords -->
+            <div id="paneKeywords" class="tab-pane">
+              <div class="pane-toolbar">
+                <div class="count-indicator font-mono">
+                  <span id="keywordGroupCount">0</span> KELOMPOK (FOTO)
+                </div>
+                <div class="toolbar-actions">
+                  <button id="btnLoadKeywords" class="btn-xs btn-secondary">MUAT DARI FILE</button>
+                  <button id="btnSaveKeywords" class="btn-xs btn-secondary">SIMPAN FILE</button>
+                </div>
+              </div>
+              <p class="field-hint">Daftar kata kunci per foto dipisahkan oleh <strong>baris kosong</strong>.</p>
+              <textarea id="keywordInput" class="editor-textarea font-mono" placeholder="Kelompok 1 (Foto 1):&#10;melting clock, surreal clock, dripping time, vector&#10;&#10;Kelompok 2 (Foto 2):&#10;bald eagle, patriotic america, vector illustration, flag" spellcheck="false"></textarea>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Execution Panel Card -->
+        <div class="card action-card">
+          <div class="card-header">
+            <h2 class="card-title">03. EKSEKUSI OPERASI</h2>
+          </div>
+          <div class="card-body">
+            <!-- Options -->
+            <div class="options-group font-mono">
+              <label class="checkbox-label">
+                <input type="checkbox" id="chkNoBackup" checked>
+                <span>TANPA CADANGAN .BAK (LANGSUNG FILE UTAMA)</span>
+              </label>
+              <div class="form-row">
+                <label for="templateInput" class="form-label">TEMPLATE RENAME</label>
+                <input type="text" id="templateInput" class="text-input font-mono" value="{title}">
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-grid">
+              <button id="btnExecuteAuto" class="btn btn-primary btn-block">
+                ⚡ EKSEKUSI AUTO (METADATA + RENAME)
+              </button>
+              <div class="secondary-actions-row">
+                <button id="btnExecuteMeta" class="btn btn-secondary btn-sm">HANYA METADATA</button>
+                <button id="btnExecuteRename" class="btn btn-secondary btn-sm">HANYA RENAME</button>
+                <button id="btnExecuteStrip" class="btn btn-destructive btn-sm">STRIP METADATA</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Right Panel: Live Mapping Preview, Image Inspector & Execution Log -->
+      <section class="preview-panel">
+        
+        <!-- Live Mapping Card -->
+        <div class="card table-card">
+          <div class="card-header">
+            <div class="table-header-left">
+              <h2 class="card-title">PRATINJAU PEMETAAN FOTO & METADATA</h2>
+              <span id="mappingSummaryBadge" class="badge font-mono">READY: 0 / 0</span>
+            </div>
+            <div class="view-toggle">
+              <button id="btnViewTable" class="btn-xs btn-toggle active">TABEL</button>
+              <button id="btnViewGrid" class="btn-xs btn-toggle">GRID KARTU</button>
+            </div>
+          </div>
+
+          <!-- Notification Warnings -->
+          <div id="warningContainer" class="warning-box font-mono" style="display: none;">
+            <div class="warning-title">PERINGATAN PEMETAAN:</div>
+            <ul id="warningList"></ul>
+          </div>
+
+          <!-- Table View Container -->
+          <div id="tableViewContainer" class="table-responsive">
+            <table class="data-table font-mono">
+              <thead>
+                <tr>
+                  <th style="width: 36px;">#</th>
+                  <th style="width: 54px;">FOTO</th>
+                  <th style="width: 22%;">NAMA FILE ASLI</th>
+                  <th style="width: 24%;">TARGET RENAME</th>
+                  <th style="width: 24%;">JUDUL TERPETAKAN</th>
+                  <th style="width: 14%;">TAGS</th>
+                  <th style="width: 75px;">STATUS</th>
+                  <th style="width: 65px; text-align: center;">AKSI</th>
+                </tr>
+              </thead>
+              <tbody id="previewTableBody">
+                <tr>
+                  <td colspan="8" class="empty-state">Memuat data foto...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Grid View Container -->
+          <div id="gridViewContainer" class="cards-grid" style="display: none;">
+            <!-- Rendered by app.js -->
+          </div>
+
+        </div>
+
+        <!-- Terminal Console Card -->
+        <div class="card terminal-card">
+          <div class="card-header">
+            <h2 class="card-title">LOG AKTIVITAS & KONSOL EKSEKUSI</h2>
+            <div class="terminal-actions">
+              <span id="execProgressBadge" class="badge font-mono" style="display: none;">BERJALAN...</span>
+              <button id="btnClearLogs" class="btn-xs btn-secondary">BERSIHKAN LOG</button>
+            </div>
+          </div>
+          <div class="terminal-body font-mono" id="terminalOutput">
+            <div class="log-line text-muted">[SISTEM] imgmeta Web UI siap digunakan.</div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+
+    <!-- Modal: Metadata Inspector (Industrial Minimalism) -->
+    <div id="metaDetailModal" class="modal-backdrop" style="display: none;">
+      <div class="modal-window">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <span class="badge font-mono">INSPEKSI METADATA</span>
+            <h3 id="modalFileName" class="modal-title font-mono text-truncate">foto.jpg</h3>
+          </div>
+          <button id="modalCloseBtn" class="btn-close" title="Tutup">✕</button>
+        </div>
+
+        <div class="modal-nav">
+          <button id="tabModalSummary" class="modal-tab-btn active">RINGKASAN & MICROSTOCK</button>
+          <button id="tabModalExif" class="modal-tab-btn">EXIF & KAMERA</button>
+          <button id="tabModalGps" class="modal-tab-btn">GPS & LOKASI</button>
+          <button id="tabModalRaw" class="modal-tab-btn">RAW JSON</button>
+        </div>
+
+        <div class="modal-body font-mono">
+          <!-- Pane 1: Summary & Microstock -->
+          <div id="modalPaneSummary" class="modal-pane active">
+            <div class="modal-hero">
+              <div class="modal-thumb-box">
+                <img id="modalThumbImg" src="" alt="Thumbnail" class="modal-thumb">
+              </div>
+              <div class="modal-quick-meta">
+                <div class="meta-row">
+                  <span class="meta-label">DIMENSI:</span>
+                  <span id="modalDims" class="meta-val">-</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-label">UKURAN FILE:</span>
+                  <span id="modalSize" class="meta-val">-</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-label">FORMAT:</span>
+                  <span id="modalFormat" class="meta-val">-</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-label">STATUS EXIF:</span>
+                  <span id="modalExifStatus" class="meta-val">-</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <div class="section-title-bar">
+                <span>JUDUL & DESKRIPSI (IPTC 2:05 / DC:TITLE / XPTITLE)</span>
+                <button id="btnCopyTitle" class="btn-xs btn-secondary">SALIN JUDUL</button>
+              </div>
+              <div id="modalTitleContent" class="meta-content-box font-mono">-</div>
+            </div>
+
+            <div class="detail-section">
+              <div class="section-title-bar">
+                <span>KATA KUNCI (<span id="modalKeywordCount">0</span> TAGS)</span>
+                <button id="btnCopyKeywords" class="btn-xs btn-secondary">SALIN KATA KUNCI</button>
+              </div>
+              <div id="modalKeywordBadges" class="keyword-cloud">
+                <span class="text-muted">(Tidak ada kata kunci)</span>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <div class="section-title-bar">
+                <span>KETERANGAN / CAPTION (IPTC 2:120) & PENULIS (2:80)</span>
+              </div>
+              <div class="meta-grid-2">
+                <div>
+                  <div class="meta-field-label">KETERANGAN:</div>
+                  <div id="modalCaption" class="meta-field-val">-</div>
+                </div>
+                <div>
+                  <div class="meta-field-label">PENULIS / ARTIS:</div>
+                  <div id="modalAuthor" class="meta-field-val">-</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pane 2: EXIF & Camera -->
+          <div id="modalPaneExif" class="modal-pane">
+            <table class="meta-detail-table font-mono">
+              <tbody id="modalExifTableBody">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pane 3: GPS & Location -->
+          <div id="modalPaneGps" class="modal-pane">
+            <div id="modalGpsContent" class="gps-container font-mono">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+
+          <!-- Pane 4: RAW JSON -->
+          <div id="modalPaneRaw" class="modal-pane">
+            <pre id="modalRawJson" class="raw-json-box font-mono"></pre>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <span id="copyToast" class="copy-toast font-mono" style="display: none;">Teks berhasil disalin ke clipboard!</span>
+          <button id="modalCloseBtnBottom" class="btn btn-secondary btn-sm">TUTUP</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bottom-bar font-mono">
+      <div class="footer-left">
+        <span>IMGMETA v1.2.0</span>
+        <span>•</span>
+        <span>STANDAR INDUSTRI: EXIF 2.32 / IPTC IIM 4.1 / ADOBE XMP DUBLIN CORE</span>
+      </div>
+      <div class="footer-right">
+        <span>MICROSTOCK COMPLIANT (ADOBE STOCK / SHUTTERSTOCK / FREEPIK)</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

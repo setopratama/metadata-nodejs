@@ -5,11 +5,12 @@ import * as utils from "./utils.js";
 import * as meta from "./meta.js";
 import * as renameMod from "./rename.js";
 import { runSelftest } from "../test/selftest.js";
+import { startServer } from "./server.js";
 
-export const VERSION = "1.1.0";
+export const VERSION = "1.2.0";
 
 const BOOLEAN_OPTS = new Set([
-  "apply", "json", "touch", "no-backup", "remove-gps", "help", "version", "no-color",
+  "apply", "json", "touch", "no-backup", "remove-gps", "help", "version", "no-color", "no-open",
 ]);
 
 function parseArgs(argv) {
@@ -47,6 +48,7 @@ function usage() {
   utils.info("Pemakaian: node index.js <perintah> [file...] [opsi]");
   utils.info("");
   utils.info("Perintah:");
+  utils.info("  web        Jalankan Web UI (antarmuka browser interaktif)");
   utils.info("  auto       Proses otomatis: ubah metadata (title & keyword) sekaligus rename file sesuai title");
   utils.info("  read       Baca metadata foto (EXIF & IPTC)");
   utils.info("  edit       Ubah metadata (tanggal, GPS, artis, judul, tag, dll.)");
@@ -54,6 +56,10 @@ function usage() {
   utils.info("  strip      Hapus semua metadata (EXIF, IPTC, XMP)");
   utils.info("  rename     Rename file batch dengan template");
   utils.info("  selftest   Jalankan pengujian internal");
+  utils.info("");
+  utils.info(utils.cyan("web:"));
+  utils.info("  node index.js web [--port 3000] [--no-open]");
+  utils.info("  Membuka antarmuka grafis Web UI di browser (default port: 3000).");
   utils.info("");
   utils.info(utils.cyan("auto:"));
   utils.info('  node index.js auto "foto/*.jpg"');
@@ -263,7 +269,7 @@ function readLines(filePath) {
 }
 
 /** Filter judul non-kosong agar selaras dengan kelompok kata kunci. */
-function parseTitles(lines) {
+export function parseTitles(lines) {
   return lines.map((s) => String(s).trim()).filter(Boolean);
 }
 
@@ -273,7 +279,7 @@ function parseTitles(lines) {
  * letakkan file tersebut di indeks K-1 agar tidak terjadi pergeseran/swap acak saat generate ulang.
  * File sisanya diurutkan secara alami (numeric natural sort).
  */
-function sortFilesByTitles(files, titles) {
+export function sortFilesByTitles(files, titles) {
   if (!titles || !titles.length) {
     return files.slice().sort((a, b) =>
       a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
@@ -476,6 +482,10 @@ export function run(argv) {
     utils.resetFailures();
 
     switch (cmd) {
+      case "web":
+      case "serve":
+      case "ui":
+        return startServer(opts);
       case "auto":
       case "process":
         cmdAuto(files, opts);

@@ -37,7 +37,8 @@ imgmeta.cmd         Peluncur Windows
 foto/               Folder kerja: tempat foto yang akan diproses
 CHANGELOG.md        Riwayat perubahan versi (wajib diupdate tiap perubahan penting)
 src/
-  cli.js            Parsing argumen (parseArgs) + perintah: auto/read/edit/apply/strip/rename
+  cli.js            Parsing argumen (parseArgs) + perintah: web/auto/read/edit/apply/strip/rename
+  server.js         HTTP server murni Node.js (REST API & static files untuk Web UI)
   jpeg.js           Parser struktur JPEG: segmen, APP1 "Exif\0\0", APP13 "Photoshop 3.0",
                     XMP, dimensi SOF; insertExif/removeExif, insertIptc/removeIptc, removeXmp
   png.js            Parser & serializer chunk PNG: eXIf (EXIF), tEXt/iTXt, IHDR (dimensi),
@@ -52,6 +53,7 @@ src/
                     sanitasi nama Windows, glob, ensureUniqueTarget,
                     parseKeywordGroups (kelompok kata kunci apply)
   tinyjpeg.js       Encoder JPEG grayscale 8x8 (HANYA untuk pengujian/selftest)
+public/             Aset Web UI (Industrial Minimalism): index.html, style.css, app.js
 test/
   selftest.js       Pengujian round-trip; dipanggil lewat perintah "selftest"
 ```

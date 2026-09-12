@@ -10,7 +10,8 @@ CLI (aplikasi baris perintah) untuk **membaca & mengubah metadata foto** dan
 
 ## Fitur Utama
 
-- 🚀 **Tanpa Dependensi Eksternal**: Node.js ESM murni (`>= 16`). Seluruh parser & serializer (JPEG, PNG, TIFF/EXIF, IPTC IIM 8BIM) ditulis manual tanpa pustaka pihak ketiga.
+- 🌐 **Web UI Interaktif (Industrial Minimalism)**: Antarmuka grafis browser yang bersih dan responsif sesuai spesifikasi [DESIGN.md](file:///d:/METADATA/DESIGN.md). Mendukung input judul & kata kunci, pemilih subfolder, live preview tabel/grid kartu gambar, serta eksekusi 1-klik ubah metadata dan rename batch.
+- 🚀 **Tanpa Dependensi Eksternal**: Node.js ESM murni (`>= 16`). Seluruh parser, serializer (JPEG, PNG, TIFF/EXIF, IPTC IIM 8BIM, Adobe XMP Dublin Core), dan HTTP server Web UI ditulis manual tanpa pustaka pihak ketiga.
 - 📷 **Metadata EXIF & IPTC Lengkap**:
   - **EXIF**: Kamera (`Make`, `Model`), Lensa (`LensModel`), Software, Tanggal (`DateTimeOriginal`, `DateTimeDigitized`), Hak Cipta, Artis, Deskripsi (`ImageDescription`), Orientasi, dan Koordinat GPS (`Lat`, `Lon`, `Alt`, `DateStamp`, `TimeStamp`).
   - **IPTC**: Judul (2:05), Kata Kunci (2:25), Keterangan/Deskripsi (2:120), Penulis (2:80) dengan dukungan charset UTF-8 (Record 1 Dataset 0x5A).
@@ -28,7 +29,8 @@ CLI (aplikasi baris perintah) untuk **membaca & mengubah metadata foto** dan
 Pastikan [Node.js](https://nodejs.org) (versi 16 atau lebih baru) sudah terpasang.
 
 ```bash
-npm start                     # 1 langkah: terapkan metadata + rename foto di folder foto/
+npm run web                   # jalankan Web UI di browser (default: http://localhost:3000)
+npm start                     # 1 langkah CLI: terapkan metadata + rename foto di folder foto/
 npm run selftest              # jalankan pengujian internal
 ```
 
