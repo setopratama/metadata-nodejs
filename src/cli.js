@@ -82,6 +82,7 @@ function usage() {
   utils.info("");
   utils.info(utils.cyan("rename:"));
   utils.info('  node index.js rename "*.jpg" --template "{date:YYYYMMDD}_{seq:3}" [--apply] [--start 1]');
+  utils.info('  node index.js rename "*.jpg" --template "{title}" --titles title.txt [--apply]');
   utils.info("  Template: {name} {ext} {folder} {make} {model} {lens} {artist}");
   utils.info("            {copyright} {description} {software} {title} {keywords}");
   utils.info("            {width} {height} {seq} {seq:3} {date} {date:YYYYMMDD_HHmmss}");
@@ -436,7 +437,10 @@ function cmdAuto(files, opts) {
 
   // 2. Rename batch seluruh file sesuai title
   utils.info("");
-  renameMod.runRename(list, "{title}", { apply: true });
+  renameMod.runRename(list, "{title}", {
+    apply: true,
+    titles: titles && titles.length ? titles : undefined,
+  });
 
   utils.info("");
   utils.info(utils.green("Selesai diproses!"));
@@ -446,10 +450,17 @@ function cmdAuto(files, opts) {
 function cmdRename(files, opts) {
   if (!files.length) throw new Error("Perintah rename membutuhkan minimal 1 file/glob/direktori.");
   if (!opts.template) throw new Error("Opsi --template wajib diisi. Contoh: --template \"{date:YYYYMMDD}_{seq:3}\"");
-  const list = renameMod.expandFiles(files);
-  if (!list.length) throw new Error("Tidak ada file yang ditemukan.");
+  const rawList = renameMod.expandFiles(files);
+  if (!rawList.length) throw new Error("Tidak ada file yang ditemukan.");
+
+  const titles = opts.titles ? parseTitles(readLines(opts.titles)) : null;
+  const list = titles && titles.length ? sortFilesByTitles(rawList, titles) : rawList;
   const start = opts.start ? parseInt(opts.start, 10) || 1 : 1;
-  renameMod.runRename(list, opts.template, { apply: Boolean(opts.apply), start });
+  renameMod.runRename(list, opts.template, {
+    apply: Boolean(opts.apply),
+    start,
+    titles: titles && titles.length ? titles : undefined,
+  });
 }
 
 // ---------- ringkasan log kegagalan ----------

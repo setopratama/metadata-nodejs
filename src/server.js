@@ -498,11 +498,21 @@ async function handleRequest(req, res) {
           logs.push(`[RENAME] Menjalankan rename batch dengan template '${tpl}'...`);
           try {
             const currentFileList = list.map((f) => f);
-            renameMod.runRename(currentFileList, tpl, { apply: true, start: 1 });
-            logs.push(`[OK] Rename batch selesai diproses.`);
+            const renRes = renameMod.runRename(currentFileList, tpl, {
+              apply: true,
+              start: 1,
+              titles: titles && titles.length ? titles : undefined,
+            });
+            if (action === "rename") {
+              processed += renRes.renamed;
+              skipped += renRes.unchanged;
+              failed += renRes.failed;
+            }
+            logs.push(`[OK] Rename batch selesai: ${renRes.renamed} diganti nama, ${renRes.unchanged} tetap, ${renRes.failed} gagal.`);
           } catch (err) {
             logs.push(`[ERROR] Gagal rename batch: ${err.message}`);
             utils.logFailure("api_rename", folder, err.message);
+            if (action === "rename") failed += list.length;
           }
         }
 

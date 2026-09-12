@@ -22,6 +22,13 @@ Versi mengikuti `package.json` / `VERSION` di `src/cli.js` (saat ini **v1.2.0**)
   - Eksekusi 1-klik untuk Auto Process (Metadata + Rename), Terapkan Metadata Saja, Rename Saja, atau Strip Metadata.
   - Konsol log aktivitas real-time di antarmuka web.
 
+### Diperbaiki
+
+- **Batch Rename Berbasis Judul (`titles`)**:
+  - `buildName` dan `runRename` di `src/rename.js` kini mendukung parameter `customTitle` dan opsi `options.titles` agar file tetap dapat di-rename sesuai daftar judul meskipun metadata EXIF pada file fisik belum ditulis atau berformat non-JPEG/PNG.
+  - CLI `cmdRename` kini mendukung opsi `--titles <file>` (misal `--titles title.txt`) dengan penyortiran cerdas `sortFilesByTitles`.
+  - Web UI API `/api/execute` untuk aksi `rename` kini meneruskan daftar judul dari form textarea ke `runRename` dan menghitung metrik `processed`/`skipped`/`failed` secara akurat pada respon JSON.
+
 ## [1.1.0] - 2026-08-18
 
 ### Ditambahkan

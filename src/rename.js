@@ -73,7 +73,7 @@ export function expandFiles(args, opts = {}) {
  *        {description} {software} {width} {height} {seq} {seq:N} {date} {date:FORMAT}
  * Ekstensi asli otomatis ditambahkan bila template tidak memuat {ext}.
  */
-export function buildName(filePath, template, index, fileMeta) {
+export function buildName(filePath, template, index, fileMeta, customTitle = null) {
   const parsed = path.parse(filePath);
   const folder = path.basename(parsed.dir) || "";
   const view = fileMeta && (fileMeta.model || fileMeta.iptc)
@@ -92,6 +92,9 @@ export function buildName(filePath, template, index, fileMeta) {
   if (!dateObj) dateObj = new Date();
 
   const t = (v) => (v == null ? "" : String(v));
+  const titleVal = customTitle || (view && view.title) || (view && view.description) || "";
+  const descVal = (view && view.description) || customTitle || "";
+
   const tokens = {
     name: parsed.name,
     ext: ext,
@@ -101,9 +104,9 @@ export function buildName(filePath, template, index, fileMeta) {
     lens: t(view && view.lens),
     artist: t(view && view.artist),
     copyright: t(view && view.copyright),
-    description: t(view && view.description),
+    description: t(descVal),
     software: t(view && view.software),
-    title: t(view && view.title) || t(view && view.description),
+    title: t(titleVal),
     keywords: t(view && view.keywords && view.keywords.join(", ")),
     width: t((view && view.width) || (fileMeta && fileMeta.dims && fileMeta.dims.w) || ""),
     height: t((view && view.height) || (fileMeta && fileMeta.dims && fileMeta.dims.h) || ""),
@@ -131,11 +134,12 @@ export function buildName(filePath, template, index, fileMeta) {
  * Jalankan rename batch.
  * @param {string[]} files  Daftar file absolut
  * @param {string} template Template nama
- * @param {object} options  { apply: boolean, start: number }
+ * @param {object} options  { apply: boolean, start: number, titles: string[] }
  */
 export function runRename(files, template, options = {}) {
   const apply = Boolean(options.apply);
   const start = options.start || 1;
+  const titles = Array.isArray(options.titles) ? options.titles : null;
   const planned = new Set();
   const batchSources = new Set(files.map((f) => path.resolve(f).toLowerCase()));
   const result = { total: files.length, renamed: 0, unchanged: 0, failed: 0, dryRun: !apply };
@@ -150,6 +154,7 @@ export function runRename(files, template, options = {}) {
 
   files.forEach((file, i) => {
     const idx = start + i;
+    const mappedTitle = titles && i < titles.length ? titles[i] : null;
     let fileMeta = null;
     try {
       fileMeta = readFileMeta(file);
@@ -163,7 +168,7 @@ export function runRename(files, template, options = {}) {
     const oldName = path.basename(file);
     let target;
     try {
-      target = buildName(file, template, idx, fileMeta);
+      target = buildName(file, template, idx, fileMeta, mappedTitle);
     } catch (e) {
       utils.err(oldName + ": " + e.message);
       utils.logFailure("rename", file, "gagal menyusun nama target: " + e.message);

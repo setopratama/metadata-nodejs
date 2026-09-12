@@ -76,11 +76,12 @@
 - Sidebar is fixed-width and hidden on mobile.
 - Use clean content sections separated by whitespace and borders.
 
-## Invoice Preview
-- Treat as print-first layout.
-- Keep content clean for PDF export.
-- Use dark ink-like text, light paper-like surfaces.
-- Keep print output stable and predictable.
+## Metadata & File Preview
+- Treat as document/archive layout with high readability.
+- Visual diff format: old name `->` new name with distinct status badges (`READY`, `SKIPPED`, `SUCCESS`, `FAILED`).
+- Dual layout mode: Comparative Data Table and Photo Gallery Card Grid.
+- Use dark ink-like text, light paper-like surfaces (`stone-50` / `#fafaf9`).
+- Output and metadata views must remain consistent, predictable, and responsive.
 
 ## Custom Utility
 - `.font-mono-industrial` for `IBM Plex Mono`.

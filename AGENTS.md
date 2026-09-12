@@ -17,10 +17,12 @@ dokumentasi & komentar: **Indonesia**.
 ## Perintah Penting
 
 ```bash
-npm start                     # 1 langkah: terapkan judul & kata kunci dari file daftar + rename ke judul
-node index.js --help          # semua perintah & opsi
-node index.js selftest        # pengujian internal (round-trip EXIF + template)
+npm start                         # 1 langkah: terapkan judul & kata kunci dari file daftar + rename ke judul
+npm run web                       # jalankan antarmuka grafis Web UI di http://localhost:3000
+node index.js --help              # semua perintah & opsi
+node index.js selftest            # pengujian internal (round-trip EXIF + template)
 node index.js read "foto/*.jpg"   # baca metadata semua foto di folder kerja foto/
+node index.js rename "foto/*.jpg" --template "{title}" --titles title.txt --apply # rename batch dengan file judul
 ```
 
 `npm run selftest` setara dengan `node index.js selftest`.
@@ -109,8 +111,8 @@ Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js`). `rename.js` 
      banyak dari jumlah file — kelebihan diabaikan.". Jangan mengubah perilaku
      ini menjadi error keras tanpa persetujuan pengguna.
 5. **Nama file Windows & Fallback Rename**: `sanitizeName()` membersihkan `< > : " / \ | ? *` dan
-   karakter kontrol, buang titik/spasi di akhir, batasi 180 karakter. `buildName()` menangani ekstensi secara terpisah dan melakukan *fallback* ke nama asli (`parsed.name`) jika token template (seperti `{title}`) menghasilkan string kosong.
-6. **Anti-bentrok & Batch Rename**: `ensureUniqueTarget(target, planned, source, batchSources)` mengecek bentrok target batch dan file disk eksternal. File yang termasuk dalam daftar sumber batch (`batchSources`) dikecualikan dari pemeriksaan disk agar tidak terjadi bentrok palsu dengan nama file lama. Eksekusi rename batch (`runRename`) menggunakan strategi *Two-Pass Rename* (menggunakan file sementara `.tmp_imgmeta_...`) agar penamaan ulang masal tidak saling mengunci atau menghasilkan akhiran `_1`. Jika terdapat bentrok nama target yang benar-benar ganda, penomoran unik menggunakan format ` (2)`, ` (3)` dst.
+   karakter kontrol, buang titik/spasi di akhir, batasi 180 karakter. `buildName()` menangani ekstensi secara terpisah, menerima parameter opsional `customTitle`, dan melakukan *fallback* ke nama asli (`parsed.name`) jika token template (seperti `{title}`) menghasilkan string kosong.
+6. **Anti-bentrok & Batch Rename**: `ensureUniqueTarget(target, planned, source, batchSources)` mengecek bentrok target batch dan file disk eksternal. File yang termasuk dalam daftar sumber batch (`batchSources`) dikecualikan dari pemeriksaan disk agar tidak terjadi bentrok palsu dengan nama file lama. Eksekusi rename batch (`runRename`) mendukung opsi `options.titles` (bisa diisi dari CLI `rename --titles <file>` atau form Web UI) dan menggunakan strategi *Two-Pass Rename* (menggunakan file sementara `.tmp_imgmeta_...`) agar penamaan ulang masal tidak saling mengunci atau menghasilkan akhiran `_1`. Jika terdapat bentrok nama target yang benar-benar ganda, penomoran unik menggunakan format ` (2)`, ` (3)` dst.
 7. **Dry-run rename**: `rename` TANPA `--apply` hanya menampilkan rencana, tidak
     mengubah apa pun.
 8. **Ekspansi file**: glob `* ?` didukung; argumen direktori dibaca isinya (hanya

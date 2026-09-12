@@ -193,6 +193,18 @@ export function runSelftest() {
     "Template {date} default: " + path.basename(n4)
   );
 
+  const n5 = buildName("D:/Foto/sample.png", "{title}", 1, null, "Pemandangan Gunung Bromo");
+  assert(
+    path.normalize(n5) === path.join("D:/Foto", "Pemandangan Gunung Bromo.png"),
+    "Template {title} dengan customTitle: " + path.basename(n5)
+  );
+
+  const n6 = buildName("D:/Foto/sample_old.png", "{title}", 1, null, null);
+  assert(
+    path.normalize(n6) === path.join("D:/Foto", "sample_old.png"),
+    "Template {title} tanpa EXIF fallback ke nama asli: " + path.basename(n6)
+  );
+
   const unq1 = utils.ensureUniqueTarget("D:/Foto/test.jpg", new Set(["d:/foto/test.jpg"]));
   assert(
     path.normalize(unq1) === path.join("D:/Foto", "test (2).jpg"),
