@@ -8,7 +8,7 @@ import * as exif from "../src/exif.js";
 import * as iptc from "../src/iptc.js";
 import * as utils from "../src/utils.js";
 import { encodeGrayJpeg } from "../src/tinyjpeg.js";
-import { buildExifView, collectIptcEdits } from "../src/meta.js";
+import { buildExifView, collectIptcEdits, parseXmpMetadata } from "../src/meta.js";
 import { buildName } from "../src/rename.js";
 
 let pass = 0;
@@ -172,6 +172,15 @@ export function runSelftest() {
   );
   const kwStr = collectIptcEdits({ keywords: "a, b" }, null);
   assert(kwStr.keywords.join(",") === "a,b", "collectIptcEdits tetap memisah koma untuk string");
+
+  // 4f. Parser XMP Dublin Core
+  const sampleXmp = `<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title><rdf:Alt><rdf:li xml:lang="x-default">Pemandangan Bromo</rdf:li></rdf:Alt></dc:title><dc:creator><rdf:Seq><rdf:li>Fotografer Pro</rdf:li></rdf:Seq></dc:creator><dc:subject><rdf:Bag><rdf:li>gunung</rdf:li><rdf:li>bromo</rdf:li><rdf:li>sunrise</rdf:li></rdf:Bag></dc:subject></rdf:Description></rdf:RDF></x:xmpmeta>`;
+  const parsedXmp = parseXmpMetadata(sampleXmp);
+  assert(parsedXmp && parsedXmp.title === "Pemandangan Bromo", "XMP title terbaca");
+  assert(parsedXmp && parsedXmp.author === "Fotografer Pro", "XMP author terbaca");
+  assert(parsedXmp && parsedXmp.keywords.length === 3 && parsedXmp.keywords[1] === "bromo", "XMP keywords terbaca");
+  const xmpView = buildExifView(null, null, null, parsedXmp);
+  assert(xmpView.keywords.length === 3 && xmpView.title === "Pemandangan Bromo", "buildExifView memuat field fallback XMP");
 
   // 5. Template rename
   const fakeMeta = { mtime: new Date(2020, 0, 15, 8, 30, 0), model: m2, dims: { w: 8, h: 8 } };

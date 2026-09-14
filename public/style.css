@@ -76,6 +76,12 @@ body {
   display: flex;
   flex-direction: column;
   width: 100%;
+  padding-bottom: 175px; /* Reserve space for fixed docked bottom bar */
+  transition: padding-bottom 0.2s ease;
+}
+
+.app-layout.dock-collapsed {
+  padding-bottom: 72px; /* Compact space when console is minimized */
 }
 
 /* Top Industrial Navbar */
@@ -197,6 +203,27 @@ body {
     padding: 1rem;
     gap: 1rem;
   }
+}
+
+/* Fixed Docked Bottom Container (Console + Footer) */
+.docked-bottom-container {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  background-color: var(--white);
+  border-top: 1px solid var(--stone-300);
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+}
+
+.bottom-console {
+  padding: 0;
+  width: 100%;
+  margin: 0;
+  min-width: 0;
 }
 
 /* Industrial Card Structure */
@@ -496,8 +523,6 @@ body {
 .table-responsive {
   width: 100%;
   overflow-x: auto;
-  max-height: 520px;
-  overflow-y: auto;
   display: block;
   -webkit-overflow-scrolling: touch;
 }
@@ -537,6 +562,17 @@ body {
 
 .data-table tbody tr:hover {
   background-color: var(--stone-50);
+}
+
+.file-sub-meta {
+  font-size: 0.68rem;
+  color: var(--stone-500);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 .empty-state {
@@ -588,6 +624,12 @@ body {
   color: var(--blue-600);
 }
 
+.badge-info {
+  border-color: var(--stone-400);
+  background-color: var(--stone-200);
+  color: var(--stone-800);
+}
+
 .badge-success {
   border-color: var(--emerald-600);
   background-color: var(--emerald-50);
@@ -617,8 +659,6 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 1rem;
   padding: 1.25rem;
-  max-height: 520px;
-  overflow-y: auto;
 }
 
 .grid-card-item {
@@ -655,19 +695,67 @@ body {
   border-top: 1px dashed var(--stone-200);
 }
 
-/* Terminal Console */
+/* Terminal Console (Fixed Bottom Dock) */
 .terminal-card {
   min-width: 0;
+  border: none;
+  background: transparent;
+}
+
+.terminal-header {
+  padding: 0.4rem 1.25rem;
+  background-color: var(--stone-100);
+  border-bottom: 1px solid var(--stone-300);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.terminal-header-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.terminal-header-title .card-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--stone-700);
+  margin: 0;
+}
+
+.terminal-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background-color: var(--emerald-600);
+  box-shadow: 0 0 6px rgba(5, 150, 105, 0.6);
+}
+
+.terminal-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .terminal-body {
   background-color: var(--stone-900);
   color: #e7e5e4;
-  padding: 1rem;
-  height: 160px;
+  padding: 0.5rem 1.25rem;
+  height: 95px; /* Compact height (tidak terlalu tinggi) */
   overflow-y: auto;
-  font-size: 0.78rem;
-  line-height: 1.6;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  transition: height 0.2s ease;
+}
+
+.terminal-card.is-collapsed .terminal-body {
+  display: none;
+}
+
+.terminal-card.is-expanded .terminal-body {
+  height: 200px;
 }
 
 .log-line {
@@ -974,20 +1062,48 @@ body {
   color: var(--emerald-600);
 }
 
-/* Footer */
+/* Footer (Docked Bottom Bar) */
 .bottom-bar {
-  background-color: var(--white);
+  background-color: var(--stone-100);
   border-top: 1px solid var(--stone-200);
-  padding: 0.75rem 1.5rem;
+  padding: 0.35rem 1.25rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--stone-500);
+  line-height: 1.4;
+}
+
+.bottom-bar .app-version {
+  font-weight: 700;
+  color: var(--stone-700);
 }
 
 .footer-left {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+}
+
+.footer-right {
+  display: flex;
+  align-items: center;
+}
+
+@media (max-width: 800px) {
+  .bottom-bar {
+    flex-direction: column;
+    gap: 2px;
+    align-items: flex-start;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.62rem;
+  }
+  .terminal-header {
+    padding: 0.4rem 0.85rem;
+  }
+  .terminal-body {
+    padding: 0.5rem 0.85rem;
+    height: 85px;
+  }
 }

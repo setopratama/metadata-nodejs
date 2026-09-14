@@ -10,6 +10,7 @@ dokumentasi & komentar: **Indonesia**.
 - Runtime: Node.js >= 16, `"type": "module"` (ESM murni).
 - **Aturan utama: JANGAN menambah dependensi eksternal.** Semua parser (JPEG, PNG, TIFF/EXIF)
   ditulis manual — ini nilai jual utama project.
+- **Aturan Git: JANGAN melakukan `git add`, `git commit`, maupun `git push` tanpa seizin/persetujuan langsung dari owner.**
 - EXIF didukung untuk **JPEG** (`.jpg`/`.jpeg`) dan **PNG** (`.png`). File gambar lain tetap bisa di-rename.
 - **Folder kerja foto** berada di `foto/` (root project) — letakkan foto yang akan
   diproses di sana. Contoh perintah di bawah memakai `foto/*.jpg`.
@@ -187,3 +188,4 @@ Sebelum menyelesaikan perubahan apa pun pada logika EXIF/rename:
 - Menghapus seluruh segmen APP13 (bukan hanya resource IPTC) saat `edit`;
   padahal `edit` harus mengganti segmen APP13 lama, dan hanya `strip` yang membuangnya.
 - Menganggap glob mendukung `**` — parser glob hanya `*` dan `?` di satu segmen nama.
+- Melakukan operasi Git (`git add`, `git commit`, `git push`) secara mandiri tanpa persetujuan eksplisit dari owner.

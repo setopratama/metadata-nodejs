@@ -165,17 +165,16 @@
                 <tr>
                   <th style="width: 36px;">#</th>
                   <th style="width: 54px;">FOTO</th>
-                  <th style="width: 22%;">NAMA FILE ASLI</th>
-                  <th style="width: 24%;">TARGET RENAME</th>
-                  <th style="width: 24%;">JUDUL TERPETAKAN</th>
-                  <th style="width: 14%;">TAGS</th>
-                  <th style="width: 75px;">STATUS</th>
-                  <th style="width: 65px; text-align: center;">AKSI</th>
+                  <th style="width: 28%;">NAMA FILE ASLI</th>
+                  <th style="width: 36%;">TARGET RENAME</th>
+                  <th style="width: 12%;">TAGS</th>
+                  <th style="width: 80px;">STATUS</th>
+                  <th style="width: 95px; text-align: center;">AKSI</th>
                 </tr>
               </thead>
               <tbody id="previewTableBody">
                 <tr>
-                  <td colspan="8" class="empty-state">Memuat data foto...</td>
+                  <td colspan="7" class="empty-state">Memuat data foto...</td>
                 </tr>
               </tbody>
             </table>
@@ -186,20 +185,6 @@
             <!-- Rendered by app.js -->
           </div>
 
-        </div>
-
-        <!-- Terminal Console Card -->
-        <div class="card terminal-card">
-          <div class="card-header">
-            <h2 class="card-title">LOG AKTIVITAS & KONSOL EKSEKUSI</h2>
-            <div class="terminal-actions">
-              <span id="execProgressBadge" class="badge font-mono" style="display: none;">BERJALAN...</span>
-              <button id="btnClearLogs" class="btn-xs btn-secondary">BERSIHKAN LOG</button>
-            </div>
-          </div>
-          <div class="terminal-body font-mono" id="terminalOutput">
-            <div class="log-line text-muted">[SISTEM] imgmeta Web UI siap digunakan.</div>
-          </div>
         </div>
 
       </section>
@@ -314,17 +299,38 @@
       </div>
     </div>
 
-    <!-- Footer -->
-    <footer class="bottom-bar font-mono">
-      <div class="footer-left">
-        <span>IMGMETA v1.2.0</span>
-        <span>•</span>
-        <span>STANDAR INDUSTRI: EXIF 2.32 / IPTC IIM 4.1 / ADOBE XMP DUBLIN CORE</span>
-      </div>
-      <div class="footer-right">
-        <span>MICROSTOCK COMPLIANT (ADOBE STOCK / SHUTTERSTOCK / FREEPIK)</span>
-      </div>
-    </footer>
+    <!-- Fixed Docked Bottom Area: Activity Log & Footer -->
+    <div class="docked-bottom-container" id="dockedBottomContainer">
+      <section class="bottom-console">
+        <div class="card terminal-card" id="terminalCard">
+          <div class="card-header terminal-header">
+            <div class="terminal-header-title">
+              <span class="terminal-dot"></span>
+              <h2 class="card-title">LOG AKTIVITAS & KONSOL EKSEKUSI</h2>
+            </div>
+            <div class="terminal-actions">
+              <span id="execProgressBadge" class="badge font-mono" style="display: none;">BERJALAN...</span>
+              <button id="btnClearLogs" class="btn-xs btn-secondary" title="Bersihkan riwayat log">BERSIHKAN</button>
+              <button id="btnToggleConsole" class="btn-xs btn-secondary" title="Kecilkan / Buka log konsol">▼ SEMBUNYIKAN</button>
+            </div>
+          </div>
+          <div class="terminal-body font-mono" id="terminalOutput">
+            <div class="log-line text-muted">[SISTEM] imgmeta Web UI siap digunakan.</div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="bottom-bar font-mono">
+        <div class="footer-left">
+          <span class="app-version">IMGMETA v1.2.0</span>
+          <span>•</span>
+          <span>STANDAR: EXIF 2.32 / IPTC IIM 4.1 / ADOBE XMP DUBLIN CORE</span>
+        </div>
+        <div class="footer-right">
+          <span>MICROSTOCK COMPLIANT (ADOBE STOCK / SHUTTERSTOCK / FREEPIK)</span>
+        </div>
+      </footer>
+    </div>
   </div>
 
   <script src="app.js"></script>

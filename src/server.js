@@ -150,8 +150,8 @@ async function handleRequest(req, res) {
           let view = null;
           try {
             r = meta.readFileMeta(fullPath);
-            if (r.model || r.iptc) {
-              view = meta.buildExifView(r.model, r.dims, r.iptc);
+            if (r.model || r.iptc || r.xmp || r.text) {
+              view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text);
             }
           } catch {}
 
@@ -213,8 +213,8 @@ async function handleRequest(req, res) {
         let view = null;
         try {
           r = meta.readFileMeta(fullPath);
-          if (r.model || r.iptc) {
-            view = meta.buildExifView(r.model, r.dims, r.iptc);
+          if (r.model || r.iptc || r.xmp || r.text) {
+            view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text);
           }
         } catch (err) {
           return sendJson(res, 500, { success: false, error: "Gagal membaca metadata: " + err.message });
@@ -327,8 +327,8 @@ async function handleRequest(req, res) {
           let view = null;
           try {
             r = meta.readFileMeta(filePath);
-            if (r.model || r.iptc) {
-              view = meta.buildExifView(r.model, r.dims, r.iptc);
+            if (r.model || r.iptc || r.xmp || r.text) {
+              view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text);
             }
           } catch {}
 
@@ -379,6 +379,9 @@ async function handleRequest(req, res) {
             mappedKeywordsCount: mappedKeywords.length,
             status: !mappedTitle && !mappedKeywords.length ? "SKIPPED" : "READY",
             relPath: path.relative(ROOT_DIR, filePath).replace(/\\/g, "/"),
+            dims: r && r.dims ? `${r.dims.w} × ${r.dims.h}` : "-",
+            size: r ? r.size : 0,
+            sizeFmt: r ? utils.fmtBytes(r.size) : "-",
           };
         });
 

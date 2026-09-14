@@ -76,8 +76,8 @@ export function expandFiles(args, opts = {}) {
 export function buildName(filePath, template, index, fileMeta, customTitle = null) {
   const parsed = path.parse(filePath);
   const folder = path.basename(parsed.dir) || "";
-  const view = fileMeta && (fileMeta.model || fileMeta.iptc)
-    ? buildExifView(fileMeta.model, fileMeta.dims, fileMeta.iptc)
+  const view = fileMeta && (fileMeta.model || fileMeta.iptc || fileMeta.xmp || fileMeta.text)
+    ? buildExifView(fileMeta.model, fileMeta.dims, fileMeta.iptc, fileMeta.xmp, fileMeta.text)
     : null;
 
   let ext = parsed.ext;

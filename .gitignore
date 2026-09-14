@@ -21,3 +21,6 @@ pnpm-debug.log*
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Tooling & Agent cache
+graphify-out/

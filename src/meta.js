@@ -17,6 +17,42 @@ export const ORIENTATION_LABELS = {
   8: "Rotasi 270 (berlawanan jarum jam)",
 };
 
+/** Parser ringan untuk metadata Adobe XMP (Dublin Core dc:title, dc:description, dc:creator, dc:subject). */
+export function parseXmpMetadata(xmpStr) {
+  if (!xmpStr || typeof xmpStr !== "string") return null;
+  const meta = { title: null, description: null, caption: null, author: null, keywords: [] };
+
+  const unesc = (s) =>
+    s ? s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").trim() : "";
+
+  // dc:title
+  const titleMatch = xmpStr.match(/<dc:title[^>]*>[\s\S]*?<rdf:li[^>]*>([\s\S]*?)<\/rdf:li>/i);
+  if (titleMatch) meta.title = unesc(titleMatch[1]) || null;
+
+  // dc:description
+  const descMatch = xmpStr.match(/<dc:description[^>]*>[\s\S]*?<rdf:li[^>]*>([\s\S]*?)<\/rdf:li>/i);
+  if (descMatch) {
+    meta.description = unesc(descMatch[1]) || null;
+    meta.caption = meta.description;
+  }
+
+  // dc:creator
+  const creatorMatch = xmpStr.match(/<dc:creator[^>]*>[\s\S]*?<rdf:li[^>]*>([\s\S]*?)<\/rdf:li>/i);
+  if (creatorMatch) meta.author = unesc(creatorMatch[1]) || null;
+
+  // dc:subject (keywords)
+  const subjectMatch = xmpStr.match(/<dc:subject[^>]*>([\s\S]*?)<\/dc:subject>/i);
+  if (subjectMatch) {
+    const liMatches = subjectMatch[1].matchAll(/<rdf:li[^>]*>([\s\S]*?)<\/rdf:li>/gi);
+    for (const m of liMatches) {
+      const kw = unesc(m[1]);
+      if (kw) meta.keywords.push(kw);
+    }
+  }
+
+  return meta;
+}
+
 /** Baca informasi + model EXIF dari satu file. */
 export function readFileMeta(filePath) {
   const buf = fs.readFileSync(filePath);
@@ -32,6 +68,8 @@ export function readFileMeta(filePath) {
     exifPresent: false,
     model: null,
     iptc: null,
+    xmp: null,
+    text: null,
     dims: null,
     exifError: null,
   };
@@ -55,6 +93,10 @@ export function readFileMeta(filePath) {
         buf.subarray(parsed.iptc.payloadStart, parsed.iptc.payloadStart + parsed.iptc.payloadLen)
       );
     }
+    if (parsed.xmp) {
+      const xmpRaw = buf.subarray(parsed.xmp.payloadStart + 29, parsed.xmp.payloadStart + parsed.xmp.payloadLen);
+      r.xmp = parseXmpMetadata(xmpRaw.toString("utf8"));
+    }
   } else if (isPng) {
     const parsed = png.parsePng(buf);
     r.dims = parsed.dims;
@@ -68,6 +110,14 @@ export function readFileMeta(filePath) {
         r.exifError = e.message;
       }
     }
+    if (parsed.text && parsed.text.length > 0) {
+      r.text = parsed.text;
+      for (const item of parsed.text) {
+        if (item.keyword === "XML:com.adobe.xmp" && !r.xmp) {
+          r.xmp = parseXmpMetadata(item.text);
+        }
+      }
+    }
   }
   return r;
 }
@@ -78,12 +128,14 @@ function val(entries, tag) {
 }
 
 /**
- * Ubah model EXIF (+ data IPTC) menjadi objek tampilan yang ramah.
+ * Ubah model EXIF (+ data IPTC / XMP / Text) menjadi objek tampilan yang ramah.
  * @param {object|null} model    Model EXIF (dari exif.parseTiff), boleh null
  * @param {object|null} dims     { w, h }
  * @param {object|null} iptcData { title, keywords[], caption, author } (dari iptc.readIptcFromApp13)
+ * @param {object|null} xmpData  { title, keywords[], description, caption, author }
+ * @param {Array|null}  textData Array chunk teks PNG { keyword, text }
  */
-export function buildExifView(model, dims, iptcData) {
+export function buildExifView(model, dims, iptcData, xmpData = null, textData = null) {
   const ifd0 = (model && model.ifd0) || [];
   const ex = (model && model.exif) || [];
   const gp = (model && model.gps) || [];
@@ -108,7 +160,7 @@ export function buildExifView(model, dims, iptcData) {
   const width = val(ex, exif.T.PixelX) || (dims && dims.w) || null;
   const height = val(ex, exif.T.PixelY) || (dims && dims.h) || null;
 
-  let keywords = (iptcData && iptcData.keywords) || [];
+  let keywords = (iptcData && iptcData.keywords && iptcData.keywords.length ? iptcData.keywords : []);
   if (!keywords.length && model) {
     const rawKw = val(ifd0, exif.T.XPKeywords);
     if (rawKw) {
@@ -125,6 +177,15 @@ export function buildExifView(model, dims, iptcData) {
       }
     }
   }
+  if (!keywords.length && xmpData && xmpData.keywords && xmpData.keywords.length) {
+    keywords = xmpData.keywords.slice();
+  }
+  if (!keywords.length && Array.isArray(textData)) {
+    const kwChunk = textData.find((t) => t.keyword && t.keyword.toLowerCase() === "keywords");
+    if (kwChunk && kwChunk.text) {
+      keywords = kwChunk.text.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+    }
+  }
 
   let title = (iptcData && iptcData.title) || val(ifd0, exif.T.ImageDescription) || null;
   if (!title && model) {
@@ -133,6 +194,13 @@ export function buildExifView(model, dims, iptcData) {
       if (Buffer.isBuffer(rawTitle)) title = rawTitle.toString("utf16le").replace(/\0+$/g, "").trim() || null;
       else if (Array.isArray(rawTitle)) title = Buffer.from(rawTitle).toString("utf16le").replace(/\0+$/g, "").trim() || null;
     }
+  }
+  if (!title && xmpData && xmpData.title) {
+    title = xmpData.title;
+  }
+  if (!title && Array.isArray(textData)) {
+    const titleChunk = textData.find((t) => t.keyword && t.keyword.toLowerCase() === "title");
+    if (titleChunk && titleChunk.text) title = titleChunk.text.trim();
   }
 
   let caption = (iptcData && iptcData.caption) || val(ifd0, exif.T.ImageDescription) || null;
@@ -143,6 +211,13 @@ export function buildExifView(model, dims, iptcData) {
       else if (Array.isArray(rawCap)) caption = Buffer.from(rawCap).toString("utf16le").replace(/\0+$/g, "").trim() || null;
     }
   }
+  if (!caption && xmpData && (xmpData.description || xmpData.caption)) {
+    caption = xmpData.description || xmpData.caption;
+  }
+  if (!caption && Array.isArray(textData)) {
+    const capChunk = textData.find((t) => t.keyword && ["description", "comment"].includes(t.keyword.toLowerCase()));
+    if (capChunk && capChunk.text) caption = capChunk.text.trim();
+  }
 
   let author = (iptcData && iptcData.author) || val(ifd0, exif.T.Artist) || null;
   if (!author && model) {
@@ -151,6 +226,13 @@ export function buildExifView(model, dims, iptcData) {
       if (Buffer.isBuffer(rawAut)) author = rawAut.toString("utf16le").replace(/\0+$/g, "").trim() || null;
       else if (Array.isArray(rawAut)) author = Buffer.from(rawAut).toString("utf16le").replace(/\0+$/g, "").trim() || null;
     }
+  }
+  if (!author && xmpData && xmpData.author) {
+    author = xmpData.author;
+  }
+  if (!author && Array.isArray(textData)) {
+    const authChunk = textData.find((t) => t.keyword && ["author", "artist"].includes(t.keyword.toLowerCase()));
+    if (authChunk && authChunk.text) author = authChunk.text.trim();
   }
 
   return {
@@ -172,7 +254,7 @@ export function buildExifView(model, dims, iptcData) {
     width,
     height,
     gps,
-    // IPTC & EXIF Metadata (Windows Details)
+    // IPTC & EXIF & XMP Metadata (Windows Details)
     title,
     keywords,
     caption,

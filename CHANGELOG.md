@@ -24,6 +24,10 @@ Versi mengikuti `package.json` / `VERSION` di `src/cli.js` (saat ini **v1.2.0**)
 
 ### Diperbaiki
 
+- **Tampilan Jumlah Tag Kata Kunci pada Web UI**:
+  - Memperbaiki bug kolom TAGS pada tabel dan grid kartu yang sebelumnya hanya menampilkan `item.mappedKeywordsCount` (selalu `0 TAGS` bila input textarea kosong). Kini menampilkan jumlah kata kunci aktual file asli serta status transisi saat pemetaan baru diterapkan.
+- **Dukungan Parser Adobe XMP & PNG Text Fallback**:
+  - Menambahkan parser ringan `parseXmpMetadata()` untuk mengekstrak `<dc:subject>`, `<dc:title>`, `<dc:description>`, dan `<dc:creator>` dari paket XMP JPEG/PNG serta chunk teks PNG (`iTXt`/`tEXt`) sebagai fallback di `buildExifView()`.
 - **Batch Rename Berbasis Judul (`titles`)**:
   - `buildName` dan `runRename` di `src/rename.js` kini mendukung parameter `customTitle` dan opsi `options.titles` agar file tetap dapat di-rename sesuai daftar judul meskipun metadata EXIF pada file fisik belum ditulis atau berformat non-JPEG/PNG.
   - CLI `cmdRename` kini mendukung opsi `--titles <file>` (misal `--titles title.txt`) dengan penyortiran cerdas `sortFilesByTitles`.

@@ -40,10 +40,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const warningContainer = document.getElementById("warningContainer");
   const warningList = document.getElementById("warningList");
 
-  // Terminal Logs
+  // Terminal Logs & Fixed Dock
+  const terminalCard = document.getElementById("terminalCard");
   const terminalOutput = document.getElementById("terminalOutput");
   const btnClearLogs = document.getElementById("btnClearLogs");
+  const btnToggleConsole = document.getElementById("btnToggleConsole");
   const execProgressBadge = document.getElementById("execProgressBadge");
+  const appLayout = document.querySelector(".app-layout");
 
   // Modal Elements
   const metaDetailModal = document.getElementById("metaDetailModal");
@@ -80,6 +83,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let previewDebounceTimer = null;
   let isExecuting = false;
   let currentModalData = null;
+  let isConsoleCollapsed = false;
 
   // Logger helper
   function log(msg, type = "info") {
@@ -89,6 +93,31 @@ document.addEventListener("DOMContentLoaded", () => {
     el.textContent = `[${stamp}] ${msg}`;
     terminalOutput.appendChild(el);
     terminalOutput.scrollTop = terminalOutput.scrollHeight;
+  }
+
+  // Console actions (Clear & Toggle Collapse)
+  if (btnClearLogs) {
+    btnClearLogs.addEventListener("click", () => {
+      terminalOutput.innerHTML = '<div class="log-line text-muted">[SISTEM] Riwayat log dibersihkan.</div>';
+    });
+  }
+
+  if (btnToggleConsole) {
+    btnToggleConsole.addEventListener("click", () => {
+      isConsoleCollapsed = !isConsoleCollapsed;
+      if (isConsoleCollapsed) {
+        terminalCard.classList.add("is-collapsed");
+        if (appLayout) appLayout.classList.add("dock-collapsed");
+        btnToggleConsole.textContent = "▲ TAMPILKAN";
+        btnToggleConsole.title = "Buka log konsol";
+      } else {
+        terminalCard.classList.remove("is-collapsed");
+        if (appLayout) appLayout.classList.remove("dock-collapsed");
+        btnToggleConsole.textContent = "▼ SEMBUNYIKAN";
+        btnToggleConsole.title = "Kecilkan log konsol";
+        terminalOutput.scrollTop = terminalOutput.scrollHeight;
+      }
+    });
   }
 
   // Tab switching
@@ -267,7 +296,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (items.length === 0) {
       previewTableBody.innerHTML = `
         <tr>
-          <td colspan="8" class="empty-state">Tidak ada file gambar di folder '${currentFolder}/'.</td>
+          <td colspan="7" class="empty-state">Tidak ada file gambar di folder '${currentFolder}/'.</td>
         </tr>
       `;
       mappingSummaryBadge.textContent = "0 / 0 FILE";
@@ -285,6 +314,42 @@ document.addEventListener("DOMContentLoaded", () => {
       const thumbUrl = `/api/thumb?file=${encodeURIComponent(item.filePath)}`;
       const nameClass = item.isNameChanged ? "badge-changed" : "";
 
+      // Badge TAGS untuk tabel & grid
+      let tagBadgeHtml = "";
+      let gridTagBadgeHtml = "";
+
+      if (item.mappedKeywordsCount > 0) {
+        if (item.currentKeywordsCount > 0 && item.currentKeywordsCount !== item.mappedKeywordsCount) {
+          tagBadgeHtml = `
+            <span class="badge badge-ready font-mono" title="Asli: ${item.currentKeywordsCount} tags → Target: ${item.mappedKeywordsCount} tags">
+              ${item.currentKeywordsCount} → ${item.mappedKeywordsCount} TAGS
+            </span>
+          `;
+          gridTagBadgeHtml = `<span class="badge badge-ready" title="Asli: ${item.currentKeywordsCount} → Baru: ${item.mappedKeywordsCount}">${item.currentKeywordsCount} → ${item.mappedKeywordsCount} TAGS</span>`;
+        } else {
+          tagBadgeHtml = `
+            <span class="badge badge-ready font-mono" title="Target baru: ${item.mappedKeywordsCount} tags">
+              ${item.mappedKeywordsCount} TAGS (BARU)
+            </span>
+          `;
+          gridTagBadgeHtml = `<span class="badge badge-ready">${item.mappedKeywordsCount} TAGS (BARU)</span>`;
+        }
+      } else if (item.currentKeywordsCount > 0) {
+        tagBadgeHtml = `
+          <span class="badge badge-info font-mono" title="Kata kunci asli pada file foto: ${item.currentKeywordsCount} tags">
+            ${item.currentKeywordsCount} TAGS
+          </span>
+        `;
+        gridTagBadgeHtml = `<span class="badge badge-info" title="Tag asli pada file: ${item.currentKeywordsCount}">${item.currentKeywordsCount} TAGS</span>`;
+      } else {
+        tagBadgeHtml = `
+          <span class="badge badge-skipped font-mono" title="Tidak ada kata kunci pada file ini">
+            0 TAGS
+          </span>
+        `;
+        gridTagBadgeHtml = `<span class="badge badge-skipped">0 TAGS</span>`;
+      }
+
       tr.innerHTML = `
         <td class="font-mono text-muted">${item.index}</td>
         <td>
@@ -293,7 +358,10 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </td>
         <td>
-          <div class="text-truncate font-mono" title="${item.currentName}">${item.currentName}</div>
+          <div class="text-truncate font-mono" style="font-weight: 600;" title="${item.currentName}">${item.currentName}</div>
+          <div class="file-sub-meta font-mono text-muted" title="Dimensi: ${item.dims || "-"} | Ukuran: ${item.sizeFmt || "-"}">
+            <span>${item.dims || "-"}</span> • <span>${item.sizeFmt || "-"}</span>
+          </div>
         </td>
         <td>
           <div class="text-truncate font-mono ${nameClass}" title="${item.plannedName}">
@@ -301,14 +369,7 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </td>
         <td>
-          <div class="text-truncate" title="${item.mappedTitle}">
-            ${item.mappedTitle}
-          </div>
-        </td>
-        <td>
-          <span class="badge ${item.mappedKeywordsCount > 0 ? "badge-ready" : "badge-skipped"} font-mono">
-            ${item.mappedKeywordsCount} TAGS
-          </span>
+          ${tagBadgeHtml}
         </td>
         <td>
           <span class="badge ${item.status === "READY" ? "badge-ready" : "badge-skipped"}">
@@ -332,10 +393,13 @@ document.addEventListener("DOMContentLoaded", () => {
             <span class="badge ${item.status === "READY" ? "badge-ready" : "badge-skipped"}">${item.status}</span>
           </div>
           <div class="text-truncate" style="font-weight: 600;" title="${item.currentName}">${item.currentName}</div>
+          <div class="file-sub-meta font-mono text-muted" title="Dimensi: ${item.dims || "-"} | Ukuran: ${item.sizeFmt || "-"}">
+            <span>${item.dims || "-"}</span> • <span>${item.sizeFmt || "-"}</span>
+          </div>
           <div class="text-truncate ${nameClass}" title="${item.plannedName}">↳ ${item.plannedName}</div>
           <div class="text-truncate text-muted" style="font-size: 0.7rem;" title="${item.mappedTitle}">${item.mappedTitle}</div>
           <div class="grid-card-actions">
-            <span class="badge badge-ready">${item.mappedKeywordsCount} TAGS</span>
+            ${gridTagBadgeHtml}
             <button class="btn-xs btn-secondary btn-inspect" data-file="${encodeURIComponent(item.filePath)}">DETAIL</button>
           </div>
         </div>

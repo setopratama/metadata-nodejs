@@ -165,7 +165,7 @@ function cmdRead(files, opts) {
   const jsonOut = [];
   for (const f of list) {
     const r = meta.readFileMeta(f);
-    const view = r.model || r.iptc ? meta.buildExifView(r.model, r.dims, r.iptc) : null;
+    const view = r.model || r.iptc || r.xmp || r.text ? meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text) : null;
     if (opts.json) {
       jsonOut.push({
         file: f,
@@ -291,7 +291,7 @@ export function sortFilesByTitles(files, titles) {
     let t = null;
     try {
       const r = meta.readFileMeta(f);
-      const view = meta.buildExifView(r.model, r.dims, r.iptc);
+      const view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text);
       t = view && view.title ? view.title.trim().toLowerCase() : null;
     } catch {}
     return { file: f, title: t };
