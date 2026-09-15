@@ -8,6 +8,8 @@ import { exec } from "node:child_process";
 import * as utils from "./utils.js";
 import * as meta from "./meta.js";
 import * as renameMod from "./rename.js";
+import * as db from "./db.js";
+import * as imageMod from "./image.js";
 import { parseTitles, sortFilesByTitles } from "./cli.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -124,6 +126,87 @@ async function handleRequest(req, res) {
   // API Endpoints
   if (pathname.startsWith("/api/")) {
     try {
+      // 0a. Presets CRUD: GET /api/presets, POST /api/presets, PUT /api/presets, DELETE /api/presets
+      if (pathname === "/api/presets") {
+        if (method === "GET") {
+          const presets = db.listPresets();
+          return sendJson(res, 200, { success: true, presets });
+        }
+        if (method === "POST") {
+          const body = await readJsonBody(req);
+          const { id, name, description } = body;
+          const created = db.createPreset(id, name, description);
+          return sendJson(res, 200, { success: true, preset: created });
+        }
+        if (method === "PUT") {
+          const body = await readJsonBody(req);
+          const { id, name, description } = body;
+          const updated = db.updatePreset(id, { name, description });
+          return sendJson(res, 200, { success: true, preset: updated });
+        }
+        if (method === "DELETE") {
+          const id = parsedUrl.searchParams.get("id");
+          if (!id) return sendJson(res, 400, { success: false, error: "ID preset diperlukan" });
+          db.deletePreset(id);
+          return sendJson(res, 200, { success: true, message: `Preset ${id} berhasil dihapus.` });
+        }
+      }
+
+      // 0b. Preset Items CRUD: GET /api/preset-items, POST /api/preset-items, POST /api/preset-items/import
+      if (pathname === "/api/preset-items") {
+        if (method === "GET") {
+          const presetId = parsedUrl.searchParams.get("preset") || "default";
+          const items = db.getPresetItems(presetId);
+          return sendJson(res, 200, { success: true, presetId, items, count: items.length });
+        }
+        if (method === "POST") {
+          const body = await readJsonBody(req);
+          const { presetId = "default", items = [] } = body;
+          const saved = db.setPresetItems(presetId, items);
+          return sendJson(res, 200, { success: true, presetId, items: saved, count: saved.length });
+        }
+      }
+
+      if (pathname === "/api/preset-items/import" && method === "POST") {
+        const body = await readJsonBody(req);
+        const { presetId = "default", titleText = "", keywordText = "", mode = "replace" } = body;
+        const saved = db.importTextToPreset(presetId, { titleText, keywordText, mode });
+        return sendJson(res, 200, { success: true, presetId, items: saved, count: saved.length });
+      }
+
+      if (pathname === "/api/preset-items/export" && method === "GET") {
+        const presetId = parsedUrl.searchParams.get("preset") || "default";
+        const exp = db.exportPresetToText(presetId);
+        return sendJson(res, 200, { success: true, presetId, ...exp });
+      }
+
+      // 0c. History API: GET /api/history, DELETE /api/history
+      if (pathname === "/api/history") {
+        if (method === "GET") {
+          const limit = parseInt(parsedUrl.searchParams.get("limit") || "50", 10);
+          const history = db.getHistory(limit);
+          return sendJson(res, 200, { success: true, history });
+        }
+        if (method === "DELETE") {
+          db.clearHistory();
+          return sendJson(res, 200, { success: true, message: "Riwayat berhasil dibersihkan." });
+        }
+      }
+
+      // 0d. Templates API: GET /api/templates, POST /api/templates
+      if (pathname === "/api/templates") {
+        if (method === "GET") {
+          const templates = db.getTemplates();
+          return sendJson(res, 200, { success: true, templates });
+        }
+        if (method === "POST") {
+          const body = await readJsonBody(req);
+          const { name, pattern, isDefault } = body;
+          const created = db.saveTemplate(name, pattern, isDefault ? 1 : 0);
+          return sendJson(res, 200, { success: true, template: created });
+        }
+      }
+
       // 1. GET /api/folders
       if (pathname === "/api/folders" && method === "GET") {
         const folders = findImageFolders(ROOT_DIR);
@@ -247,75 +330,96 @@ async function handleRequest(req, res) {
         });
       }
 
-      // 4. GET /api/inputs?folder=...
+      // 4. GET /api/inputs?folder=...&preset=...
       if (pathname === "/api/inputs" && method === "GET") {
-        const folderParam = parsedUrl.searchParams.get("folder") || "foto";
-        const folderDir = path.resolve(ROOT_DIR, folderParam);
-
-        // Cari title.txt dan keyword.txt di folder target atau root
-        let titlePath = path.join(folderDir, "title.txt");
-        if (!fs.existsSync(titlePath)) titlePath = path.join(ROOT_DIR, "title.txt");
-
-        let keywordPath = path.join(folderDir, "keyword.txt");
-        if (!fs.existsSync(keywordPath)) keywordPath = path.join(ROOT_DIR, "keyword.txt");
-
+        const presetParam = parsedUrl.searchParams.get("preset") || "default";
+        const items = db.getPresetItems(presetParam);
+        
         let titleText = "";
-        if (fs.existsSync(titlePath)) {
-          titleText = fs.readFileSync(titlePath, "utf8");
-        }
-
         let keywordText = "";
-        if (fs.existsSync(keywordPath)) {
-          keywordText = fs.readFileSync(keywordPath, "utf8");
+
+        if (items.length) {
+          titleText = items.map((it) => it.title).join("\n");
+          keywordText = items.map((it) => it.keywords.join(", ")).join("\n\n");
+        } else {
+          // Fallback ke file teks jika preset kosong
+          const folderParam = parsedUrl.searchParams.get("folder") || "foto";
+          const folderDir = path.resolve(ROOT_DIR, folderParam);
+          let titlePath = path.join(folderDir, "title.txt");
+          if (!fs.existsSync(titlePath)) titlePath = path.join(ROOT_DIR, "title.txt");
+          let keywordPath = path.join(folderDir, "keyword.txt");
+          if (!fs.existsSync(keywordPath)) keywordPath = path.join(ROOT_DIR, "keyword.txt");
+
+          if (fs.existsSync(titlePath)) titleText = fs.readFileSync(titlePath, "utf8");
+          if (fs.existsSync(keywordPath)) keywordText = fs.readFileSync(keywordPath, "utf8");
         }
 
         return sendJson(res, 200, {
           success: true,
+          preset: presetParam,
+          itemCount: items.length,
           titleText,
           keywordText,
-          titlePath: path.relative(ROOT_DIR, titlePath).replace(/\\/g, "/"),
-          keywordPath: path.relative(ROOT_DIR, keywordPath).replace(/\\/g, "/"),
         });
       }
 
       // 5. POST /api/save-inputs
       if (pathname === "/api/save-inputs" && method === "POST") {
         const body = await readJsonBody(req);
-        const { titleText, keywordText, saveLocation = "root", folder = "foto" } = body;
+        const { titleText, keywordText, saveLocation = "root", folder = "foto", preset = "default" } = body;
 
+        // Simpan ke SQLite preset
+        if (titleText !== undefined || keywordText !== undefined) {
+          db.importTextToPreset(preset, {
+            titleText: titleText || "",
+            keywordText: keywordText || "",
+            mode: "replace",
+          });
+        }
+
+        // Simpan juga ke disk jika saveLocation folder/root
         const targetDir = saveLocation === "folder" ? path.resolve(ROOT_DIR, folder) : ROOT_DIR;
-        if (!targetDir.startsWith(ROOT_DIR)) {
-          return sendJson(res, 403, { success: false, error: "Akses folder tidak valid." });
-        }
-
-        if (titleText !== undefined) {
-          fs.writeFileSync(path.join(targetDir, "title.txt"), titleText, "utf8");
-        }
-        if (keywordText !== undefined) {
-          fs.writeFileSync(path.join(targetDir, "keyword.txt"), keywordText, "utf8");
+        if (targetDir.startsWith(ROOT_DIR)) {
+          if (titleText !== undefined) {
+            fs.writeFileSync(path.join(targetDir, "title.txt"), titleText, "utf8");
+          }
+          if (keywordText !== undefined) {
+            fs.writeFileSync(path.join(targetDir, "keyword.txt"), keywordText, "utf8");
+          }
         }
 
         return sendJson(res, 200, {
           success: true,
-          message: "Daftar judul & kata kunci berhasil disimpan ke disk.",
+          message: `Daftar judul & kata kunci berhasil disimpan ke database SQLite (preset: ${preset}) dan file disk.`,
         });
       }
 
       // 6. POST /api/preview
       if (pathname === "/api/preview" && method === "POST") {
         const body = await readJsonBody(req);
-        const { folder = "foto", titleText = "", keywordText = "", template = "{title}" } = body;
+        const { folder = "foto", titleText = "", keywordText = "", template = "{title}", preset = "" } = body;
 
         const targetDir = path.resolve(ROOT_DIR, folder);
         if (!targetDir.startsWith(ROOT_DIR)) {
           return sendJson(res, 403, { success: false, error: "Akses folder tidak valid." });
         }
 
+        let effectiveTitleText = titleText;
+        let effectiveKeywordText = keywordText;
+
+        if (preset && (!titleText || !keywordText)) {
+          const items = db.getPresetItems(preset);
+          if (items.length) {
+            if (!effectiveTitleText) effectiveTitleText = items.map(it => it.title).join("\n");
+            if (!effectiveKeywordText) effectiveKeywordText = items.map(it => it.keywords.join(", ")).join("\n\n");
+          }
+        }
+
         const rawFiles = renameMod.expandFiles([targetDir]);
-        const titleLines = titleText.split(/\r?\n/);
+        const titleLines = effectiveTitleText.split(/\r?\n/);
         const titles = parseTitles(titleLines);
         
-        const keywordLines = keywordText.split(/\r?\n/);
+        const keywordLines = effectiveKeywordText.split(/\r?\n/);
         const keywordGroups = utils.parseKeywordGroups(keywordLines);
 
         const list = sortFilesByTitles(rawFiles, titles);
@@ -416,6 +520,7 @@ async function handleRequest(req, res) {
           keywordText = "",
           template = "{title}",
           noBackup = true,
+          preset = "default",
         } = body;
 
         const targetDir = path.resolve(ROOT_DIR, folder);
@@ -428,9 +533,20 @@ async function handleRequest(req, res) {
           return sendJson(res, 400, { success: false, error: "Tidak ada file gambar di folder yang dipilih." });
         }
 
-        const titleLines = titleText.split(/\r?\n/);
+        let effectiveTitleText = titleText;
+        let effectiveKeywordText = keywordText;
+
+        if (preset && (!titleText || !keywordText)) {
+          const items = db.getPresetItems(preset);
+          if (items.length) {
+            if (!effectiveTitleText) effectiveTitleText = items.map(it => it.title).join("\n");
+            if (!effectiveKeywordText) effectiveKeywordText = items.map(it => it.keywords.join(", ")).join("\n\n");
+          }
+        }
+
+        const titleLines = effectiveTitleText.split(/\r?\n/);
         const titles = parseTitles(titleLines);
-        const keywordLines = keywordText.split(/\r?\n/);
+        const keywordLines = effectiveKeywordText.split(/\r?\n/);
         const keywordGroups = utils.parseKeywordGroups(keywordLines);
 
         const list = sortFilesByTitles(rawFiles, titles);
@@ -519,10 +635,147 @@ async function handleRequest(req, res) {
           }
         }
 
+        // Rekam riwayat ke SQLite
+        db.recordHistory({
+          operation: action,
+          folder,
+          fileCount: list.length,
+          successCount: processed,
+          failCount: failed,
+          logText: logs.join("\n"),
+        });
+
         return sendJson(res, 200, {
           success: true,
           processed,
           skipped,
+          failed,
+          logs,
+          results,
+        });
+      }
+
+      // 7b. POST /api/export-jpeg
+      if (pathname === "/api/export-jpeg" && method === "POST") {
+        const body = await readJsonBody(req);
+        const {
+          folder = "foto",
+          quality = 90,
+          preset = "default",
+          titleText = "",
+          keywordText = "",
+          singleTitle = null,
+          singleKeywords = null,
+          outDir = "",
+          files: targetFiles = null,
+        } = body;
+
+        const targetFolderDir = path.resolve(ROOT_DIR, folder);
+        if (!targetFolderDir.startsWith(ROOT_DIR)) {
+          return sendJson(res, 403, { success: false, error: "Akses folder tidak valid." });
+        }
+
+        let rawFiles = [];
+        const isSingleTarget = Boolean(targetFiles && Array.isArray(targetFiles) && targetFiles.length === 1);
+        if (targetFiles && Array.isArray(targetFiles) && targetFiles.length) {
+          rawFiles = targetFiles.map((f) => (path.isAbsolute(f) ? f : path.resolve(ROOT_DIR, f)));
+        } else {
+          rawFiles = renameMod.expandFiles([targetFolderDir]);
+        }
+
+        if (!rawFiles.length) {
+          return sendJson(res, 400, { success: false, error: "Tidak ada file gambar untuk diekspor ke JPEG." });
+        }
+
+        let effectiveTitleText = titleText;
+        let effectiveKeywordText = keywordText;
+
+        if (preset && (!titleText || !keywordText)) {
+          const items = db.getPresetItems(preset);
+          if (items.length) {
+            if (!effectiveTitleText) effectiveTitleText = items.map((it) => it.title).join("\n");
+            if (!effectiveKeywordText) effectiveKeywordText = items.map((it) => it.keywords.join(", ")).join("\n\n");
+          }
+        }
+
+        const titleLines = effectiveTitleText.split(/\r?\n/);
+        const titles = parseTitles(titleLines);
+        const keywordLines = effectiveKeywordText.split(/\r?\n/);
+        const keywordGroups = utils.parseKeywordGroups(keywordLines);
+
+        const list = isSingleTarget ? rawFiles : sortFilesByTitles(rawFiles, titles);
+        const logs = [];
+        const results = [];
+        let success = 0;
+        let failed = 0;
+
+        utils.resetFailures();
+        const exportQuality = parseInt(quality, 10) || 90;
+        logs.push(`[EXPORT] Memulai export ${list.length} file ke JPEG (Kualitas: ${exportQuality}%)...`);
+
+        list.forEach((filePath, i) => {
+          try {
+            const ext = path.extname(filePath);
+            const baseName = path.basename(filePath, ext);
+            
+            let mappedTitle = titles && i < titles.length ? titles[i] : undefined;
+            let mappedKeywords = keywordGroups && i < keywordGroups.length ? keywordGroups[i] : undefined;
+
+            if (isSingleTarget) {
+              if (singleTitle !== null && singleTitle !== undefined) {
+                mappedTitle = singleTitle;
+              }
+              if (singleKeywords !== null && singleKeywords !== undefined) {
+                mappedKeywords = Array.isArray(singleKeywords) ? singleKeywords : [singleKeywords];
+              }
+            }
+
+            const targetDir = outDir ? path.resolve(ROOT_DIR, outDir) : path.dirname(filePath);
+            const destName = (mappedTitle ? utils.sanitizeName(mappedTitle) : baseName) + ".jpg";
+            const destPath = path.join(targetDir, destName);
+
+            const exportOpts = {
+              quality: exportQuality,
+              title: mappedTitle,
+              keywords: mappedKeywords,
+              caption: mappedTitle,
+              description: mappedTitle,
+            };
+
+            const resExp = imageMod.exportFileToJpeg(filePath, destPath, exportOpts);
+            success++;
+            logs.push(`[OK] ${path.basename(filePath)} -> ${path.basename(destPath)} (${utils.fmtBytes(resExp.size)}, ${resExp.timeMs}ms)`);
+            results.push({
+              src: filePath,
+              dest: destPath,
+              destName,
+              size: resExp.size,
+              sizeFmt: utils.fmtBytes(resExp.size),
+              dims: `${resExp.dims.w}x${resExp.dims.h}`,
+              timeMs: resExp.timeMs,
+              status: "SUCCESS",
+            });
+          } catch (err) {
+            failed++;
+            logs.push(`[ERROR] ${path.basename(filePath)}: ${err.message}`);
+            utils.logFailure("api_export_jpeg", filePath, err.message);
+            results.push({ src: filePath, status: "FAILED", error: err.message });
+          }
+        });
+
+        db.recordHistory({
+          operation: "export_jpeg",
+          folder,
+          fileCount: list.length,
+          successCount: success,
+          failCount: failed,
+          logText: logs.join("\n"),
+        });
+
+        return sendJson(res, 200, {
+          success: true,
+          total: list.length,
+          processed: success,
           failed,
           logs,
           results,

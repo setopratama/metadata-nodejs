@@ -6,9 +6,55 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 Jenis perubahan: **Ditambahkan** (Added), **Diubah** (Changed), **Dihapus** (Removed),
 **Diperbaiki** (Fixed).
 
-Versi mengikuti `package.json` / `VERSION` di `src/cli.js` (saat ini **v1.2.0**).
+Versi mengikuti `package.json` / `VERSION` di `src/cli.js` (saat ini **v1.1.0**).
 
-## [1.2.0] - 2026-09-12
+## [1.1.0] - 2026-09-15
+
+Rilis Fitur Baru Versi 1.1.0 — **Engine Ekspor JPEG Zero-Dependency (`src/image.js`)**, decoder PNG murni, encoder baseline JPEG berkecepatan tinggi (Fast AAN FDCT), integrasi CLI `export-jpeg`, dan dukungan Microstock Ready di Web UI.
+
+### Ditambahkan
+- **Engine Pemrosesan Gambar Murni Node.js (`src/image.js`)**:
+  - **PNG Decoder**: Mendekode format PNG (RGBA, RGB, Grayscale, Palette) dengan un-filtering scanline otomatis (None, Sub, Up, Average, Paeth) dan dekompresi `node:zlib` bawaan.
+  - **Fast JPEG Encoder**: Mengimplementasikan algoritma Fast AAN FDCT 8x8 (Arai, Agui, and Nakajima) untuk kompresi JPEG baseline JFIF beresolusi tinggi (hingga 16MP+) tanpa dependensi pihak ketiga.
+  - **Penyematan Metadata Lengkap**: Fungsi `exportFileToJpeg(src, dest, opts)` yang otomatis mengonversi gambar ke JPEG sekaligus menginjeksi segmen EXIF APP1 (TIFF model), IPTC APP13 (Photoshop 8BIM), dan Adobe XMP Dublin Core `<dc:subject>` (`<rdf:Bag>`).
+- **Perintah CLI `export-jpeg` (Alias: `jpeg`, `export`)**:
+  - `node index.js export-jpeg "foto/*.png" [--quality 90] [--preset default] [--out-dir out]`
+  - Mendukung opsi kualitas gambar (`--quality <1-100>`), pemetaan preset SQLite (`--preset`), file judul/kata kunci eksternal, dan direktori keluaran kustom (`--out-dir`).
+- **Antarmuka Web UI Export JPEG (`public/`)**:
+  - Tombol aksi **🖼️ EXPORT KE JPEG (MICROSTOCK READY)** pada panel kontrol utama untuk ekspor batch folder.
+  - **Ekspor Foto Individual**: Kartu tindakan **🖼️ EXPORT FOTO INI KE JPG** di dalam modal Inspeksi/Detail foto untuk konversi satu gambar instan dengan metadata terpetakan aktif.
+  - Slider dan pemilih pengatur kualitas JPEG interaktif (50%–100%, default 90%).
+  - Endpoint REST API `POST /api/export-jpeg` mendukung parameter `singleTitle`, `singleKeywords`, dan file tunggal dengan pencatatan log real-time dan riwayat ke SQLite.
+- **Pengujian Internal Terpadu**:
+  - Penambahan 9 skenario pengujian unit untuk decoding PNG, encoding JPEG, dan ekspor berkas lengkap (total 78 pengujian lulus 100%).
+
+## [1.0.0] - 2026-09-15
+
+Rilis Resmi Versi 1.0.0 — Modernisasi penyimpanan metadata dengan **SQLite bawaan Node.js (`node:sqlite`)**, manajemen preset, antarmuka Database Grid, dan dokumentasi arsitektur direktori lengkap.
+
+### Ditambahkan
+- **Penyimpanan SQLite Bawaan (`src/db.js`)**:
+  - Menggunakan modul standar `node:sqlite` (`DatabaseSync` Node.js >= 22) dengan **nol dependensi eksternal**.
+  - Skema database `imgmeta.db` lengkap: tabel `presets`, `items`, `history`, dan `templates`.
+  - **Auto-Migrasi**: Otomatis mendeteksi dan memigrasikan data dari `title.txt` dan `keyword.txt` ke dalam database SQLite preset `default` saat pertama kali dijalankan.
+- **Subperintah CLI `db`**:
+  - `node index.js db list` — Menampilkan daftar semua preset SQLite dan jumlah entri.
+  - `node index.js db show [preset]` — Menampilkan pratinjau judul, kata kunci, dan penulis dari preset.
+  - `node index.js db add <preset> --title "..." --keywords "..."` — Menambah entri baru ke preset.
+  - `node index.js db import <preset> [--titles <file>] [--keywords <file>]` — Mengimpor data teks ke SQLite.
+  - `node index.js db export <preset> [--titles <file>] [--keywords <file>]` — Mengekspor data SQLite ke file teks.
+  - `node index.js db clear <preset>` / `node index.js db delete <preset>` — Mengosongkan atau menghapus preset.
+- **Integrasi SQLite pada CLI `auto`, `apply`, & `rename`**:
+  - Perintah `auto` dan `apply` kini secara default membaca dari preset SQLite (opsi `--preset <id>`), dengan fallback mulus ke file teks.
+  - Seluruh operasi batch dicatat secara otomatis ke tabel `history` di SQLite.
+- **Antarmuka Web UI Database & Preset Manager (`public/`)**:
+  - Tab **GRID SQLITE**: Editor tabel interaktif untuk menambah baris, mengedit judul & kata kunci secara inline, menghapus baris, dan menyimpan perubahan langsung ke database.
+  - Tab **RIWAYAT (HISTORY)**: Menampilkan riwayat batch proses dari SQLite dengan badge status, jumlah file, waktu, dan rincian log.
+  - Kontrol Preset: Buat preset baru dan ganti preset aktif langsung dari bilah atas Web UI.
+- **Dokumentasi Struktur Folder**:
+  - Pembuatan dokumen panduan arsitektur direktori lengkap di [`docs/STRUKTUR_FOLDER.md`](docs/STRUKTUR_FOLDER.md).
+- **Pengujian Internal Terpadu**:
+  - Penambahan 10 skenario pengujian SQLite di `test/selftest.js` (total 69 pengujian lulus 100%).
 
 ### Ditambahkan
 

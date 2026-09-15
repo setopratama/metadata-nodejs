@@ -22,5 +22,9 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
+# Database lokal SQLite
+imgmeta.db
+*.db
+
 # Tooling & Agent cache
 graphify-out/

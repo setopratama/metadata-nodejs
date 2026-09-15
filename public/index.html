@@ -57,13 +57,29 @@
           </div>
         </div>
 
-        <!-- Inputs Card: Titles & Keywords -->
+        <!-- Inputs Card: Titles & Keywords / SQLite Preset Manager -->
         <div class="card inputs-card">
           <div class="card-header">
-            <h2 class="card-title">02. DATA METADATA BATCH</h2>
+            <h2 class="card-title">02. DATABASE & DATA METADATA</h2>
+            
+            <div class="preset-controls-bar">
+              <div class="preset-select-group">
+                <label for="presetSelect" class="preset-label font-mono">PRESET:</label>
+                <select id="presetSelect" class="select-input-sm font-mono preset-dropdown" title="Pilih preset metadata SQLite">
+                  <option value="default">Preset: default</option>
+                </select>
+              </div>
+              <div class="preset-btn-group">
+                <button id="btnNewPreset" class="btn-xs btn-secondary" title="Buat preset baru">+ BARU</button>
+                <button id="btnDeletePreset" class="btn-xs btn-destructive" title="Hapus preset aktif">✕</button>
+              </div>
+            </div>
+
             <div class="tab-group">
-              <button id="tabTitles" class="tab-btn active">JUDUL (TITLES)</button>
-              <button id="tabKeywords" class="tab-btn">KATA KUNCI (KEYWORDS)</button>
+              <button id="tabTitles" class="tab-btn active">TEKS JUDUL</button>
+              <button id="tabKeywords" class="tab-btn">TEKS KATA KUNCI</button>
+              <button id="tabHistory" class="tab-btn">RIWAYAT</button>
+              <button id="tabSqliteGrid" class="tab-btn" style="margin-left: auto;">📊 GRID SQLITE</button>
             </div>
           </div>
           <div class="card-body">
@@ -76,7 +92,7 @@
                 </div>
                 <div class="toolbar-actions">
                   <button id="btnLoadTitles" class="btn-xs btn-secondary">MUAT DARI FILE</button>
-                  <button id="btnSaveTitles" class="btn-xs btn-secondary">SIMPAN FILE</button>
+                  <button id="btnSaveTitles" class="btn-xs btn-secondary">SIMPAN KE FILE/DB</button>
                 </div>
               </div>
               <p class="field-hint">1 baris = 1 judul foto ke-N (Title, Caption & Dublin Core XMP).</p>
@@ -91,11 +107,63 @@
                 </div>
                 <div class="toolbar-actions">
                   <button id="btnLoadKeywords" class="btn-xs btn-secondary">MUAT DARI FILE</button>
-                  <button id="btnSaveKeywords" class="btn-xs btn-secondary">SIMPAN FILE</button>
+                  <button id="btnSaveKeywords" class="btn-xs btn-secondary">SIMPAN KE FILE/DB</button>
                 </div>
               </div>
               <p class="field-hint">Daftar kata kunci per foto dipisahkan oleh <strong>baris kosong</strong>.</p>
               <textarea id="keywordInput" class="editor-textarea font-mono" placeholder="Kelompok 1 (Foto 1):&#10;melting clock, surreal clock, dripping time, vector&#10;&#10;Kelompok 2 (Foto 2):&#10;bald eagle, patriotic america, vector illustration, flag" spellcheck="false"></textarea>
+            </div>
+
+            <!-- Pane 3: SQLite History -->
+            <div id="paneHistory" class="tab-pane">
+              <div class="pane-toolbar">
+                <div class="count-indicator font-mono">
+                  RIWAYAT BATCH OPERASI
+                </div>
+                <div class="toolbar-actions">
+                  <button id="btnRefreshHistory" class="btn-xs btn-secondary">MUAT ULANG</button>
+                  <button id="btnClearHistory" class="btn-xs btn-destructive">HAPUS</button>
+                </div>
+              </div>
+              <div id="historyListContainer" class="history-container font-mono">
+                <div class="empty-state">Belum ada riwayat operasi batch.</div>
+              </div>
+            </div>
+
+            <!-- Pane 0: SQLite Table Grid Editor -->
+            <div id="paneSqliteGrid" class="tab-pane">
+              <div class="pane-toolbar">
+                <div class="count-indicator font-mono">
+                  <span id="sqliteRowCount">0</span> ENTRI DALAM PRESET
+                </div>
+                <div class="toolbar-actions">
+                  <button id="btnAddRow" class="btn-xs btn-primary">+ BARIS</button>
+                  <button id="btnSaveDb" class="btn-xs btn-secondary">💾 SIMPAN DB</button>
+                  <button id="btnClearDb" class="btn-xs btn-destructive">KOSONGKAN</button>
+                </div>
+              </div>
+              
+              <div class="sqlite-grid-scroll font-mono">
+                <table class="sqlite-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 32px;">#</th>
+                      <th style="width: 45%;">JUDUL & DESKRIPSI</th>
+                      <th style="width: 45%;">KATA KUNCI (PISAH KOMA)</th>
+                      <th style="width: 30px; text-align: center;">✕</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sqliteTableBody">
+                    <tr>
+                      <td colspan="4" class="empty-state">Memuat data preset SQLite...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="sqlite-grid-footer font-mono">
+                <button id="btnImportFromText" class="btn-xs btn-secondary">⬇️ IMPOR TEKS KE SQLITE</button>
+                <button id="btnExportToText" class="btn-xs btn-secondary">⬆️ EKSPOR SQLITE KE TEKS</button>
+              </div>
             </div>
 
           </div>
@@ -115,7 +183,24 @@
               </label>
               <div class="form-row">
                 <label for="templateInput" class="form-label">TEMPLATE RENAME</label>
-                <input type="text" id="templateInput" class="text-input font-mono" value="{title}">
+                <div class="template-selector-group">
+                  <input type="text" id="templateInput" class="text-input font-mono" value="{title}">
+                  <select id="templatePresetSelect" class="select-input-sm font-mono" title="Pilih pola template">
+                    <option value="{title}">{title}</option>
+                    <option value="{date:YYYYMMDD}_{seq:3}">{date:YYYYMMDD}_{seq:3}</option>
+                    <option value="{artist}_{title}">{artist}_{title}</option>
+                    <option value="{make}_{model}_{seq:3}">{make}_{model}_{seq:3}</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <label for="exportQualitySlider" class="form-label" style="margin-bottom: 0;">KUALITAS EXPORT JPEG</label>
+                  <span id="exportQualityBadge" class="badge font-mono">90%</span>
+                </div>
+                <div class="quality-input-group">
+                  <input type="range" id="exportQualitySlider" min="50" max="100" value="90" class="slider-input">
+                </div>
               </div>
             </div>
 
@@ -123,6 +208,9 @@
             <div class="action-grid">
               <button id="btnExecuteAuto" class="btn btn-primary btn-block">
                 ⚡ EKSEKUSI AUTO (METADATA + RENAME)
+              </button>
+              <button id="btnExecuteExportJpeg" class="btn btn-warning btn-block font-mono">
+                🖼️ EXPORT KE JPEG (MICROSTOCK READY)
               </button>
               <div class="secondary-actions-row">
                 <button id="btnExecuteMeta" class="btn btn-secondary btn-sm">HANYA METADATA</button>
@@ -164,12 +252,12 @@
               <thead>
                 <tr>
                   <th style="width: 36px;">#</th>
-                  <th style="width: 54px;">FOTO</th>
-                  <th style="width: 28%;">NAMA FILE ASLI</th>
-                  <th style="width: 36%;">TARGET RENAME</th>
-                  <th style="width: 12%;">TAGS</th>
-                  <th style="width: 80px;">STATUS</th>
-                  <th style="width: 95px; text-align: center;">AKSI</th>
+                  <th style="width: 52px;">FOTO</th>
+                  <th style="width: 38%;">NAMA FILE ASLI</th>
+                  <th style="width: 36%;">JUDUL / DESKRIPSI</th>
+                  <th style="width: 10%;">TAGS</th>
+                  <th style="width: 75px;">STATUS</th>
+                  <th style="width: 80px; text-align: center;">AKSI</th>
                 </tr>
               </thead>
               <tbody id="previewTableBody">
@@ -233,6 +321,45 @@
                   <span id="modalExifStatus" class="meta-val">-</span>
                 </div>
               </div>
+            </div>
+
+            <!-- Single Image Export to JPEG Action Card -->
+            <div class="modal-export-card font-mono">
+              <div class="modal-export-header">
+                <div class="modal-export-title">
+                  <span class="badge badge-warning font-mono">EXPORT JPEG</span>
+                  <span class="modal-export-heading">EKSPOR FOTO INI KE JPG (MICROSTOCK READY)</span>
+                </div>
+                <div class="modal-export-quality">
+                  <label for="modalExportQuality" class="modal-export-quality-label">KUALITAS:</label>
+                  <select id="modalExportQuality" class="select-input-xs font-mono">
+                    <option value="100">100%</option>
+                    <option value="95">95%</option>
+                    <option value="90" selected>90% (Disarankan)</option>
+                    <option value="85">85%</option>
+                    <option value="80">80%</option>
+                  </select>
+                </div>
+              </div>
+              <div class="modal-export-content">
+                <p class="modal-export-desc text-muted">
+                  Konversi ke berkas <code>.jpg</code> beresolusi penuh dan menyematkan judul, kata kunci, keterangan, serta Adobe XMP Dublin Core.
+                </p>
+                <div class="modal-export-btn-group">
+                  <button id="btnModalExportJpeg" class="btn btn-warning btn-sm font-mono btn-block">
+                    🖼️ EXPORT FOTO INI KE JPG
+                  </button>
+                </div>
+                <div id="modalExportStatus" class="modal-export-status" style="display: none;"></div>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <div class="section-title-bar">
+                <span>TARGET NAMA FILE BARU (SIMULASI RENAME)</span>
+                <button id="btnCopyTargetName" class="btn-xs btn-secondary">SALIN NAMA BARU</button>
+              </div>
+              <div id="modalTargetRenameBox" class="meta-content-box font-mono" style="color: var(--amber-700); font-weight: 600;">-</div>
             </div>
 
             <div class="detail-section">
@@ -322,7 +449,9 @@
 
       <footer class="bottom-bar font-mono">
         <div class="footer-left">
-          <span class="app-version">IMGMETA v1.2.0</span>
+          <span class="app-version">IMGMETA v1.0.0</span>
+          <span>•</span>
+          <span>SQLITE DATABASE ENGINE (node:sqlite)</span>
           <span>•</span>
           <span>STANDAR: EXIF 2.32 / IPTC IIM 4.1 / ADOBE XMP DUBLIN CORE</span>
         </div>

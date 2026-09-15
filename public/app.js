@@ -1,16 +1,34 @@
-// IMGMETA Web UI Frontend Client Logic
+// IMGMETA Web UI Frontend Client Logic (Industrial Minimalism & SQLite Engine)
 document.addEventListener("DOMContentLoaded", () => {
-  // DOM Elements
+  // DOM Elements - Navigation & Folders
   const folderSelect = document.getElementById("folderSelect");
   const btnRefreshFolders = document.getElementById("btnRefreshFolders");
   const fileCountBadge = document.getElementById("fileCountBadge");
   const folderPathText = document.getElementById("folderPathText");
 
+  // Preset Controls
+  const presetSelect = document.getElementById("presetSelect");
+  const btnNewPreset = document.getElementById("btnNewPreset");
+  const btnDeletePreset = document.getElementById("btnDeletePreset");
+
   // Main Tabs
+  const tabSqliteGrid = document.getElementById("tabSqliteGrid");
   const tabTitles = document.getElementById("tabTitles");
   const tabKeywords = document.getElementById("tabKeywords");
+  const tabHistory = document.getElementById("tabHistory");
+  const paneSqliteGrid = document.getElementById("paneSqliteGrid");
   const paneTitles = document.getElementById("paneTitles");
   const paneKeywords = document.getElementById("paneKeywords");
+  const paneHistory = document.getElementById("paneHistory");
+
+  // SQLite Grid Elements
+  const sqliteRowCount = document.getElementById("sqliteRowCount");
+  const sqliteTableBody = document.getElementById("sqliteTableBody");
+  const btnAddRow = document.getElementById("btnAddRow");
+  const btnSaveDb = document.getElementById("btnSaveDb");
+  const btnClearDb = document.getElementById("btnClearDb");
+  const btnImportFromText = document.getElementById("btnImportFromText");
+  const btnExportToText = document.getElementById("btnExportToText");
 
   // Textarea Inputs & Counters
   const titleInput = document.getElementById("titleInput");
@@ -22,10 +40,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnLoadKeywords = document.getElementById("btnLoadKeywords");
   const btnSaveKeywords = document.getElementById("btnSaveKeywords");
 
+  // History Tab Elements
+  const btnRefreshHistory = document.getElementById("btnRefreshHistory");
+  const btnClearHistory = document.getElementById("btnClearHistory");
+  const historyListContainer = document.getElementById("historyListContainer");
+
   // Options & Actions
   const chkNoBackup = document.getElementById("chkNoBackup");
   const templateInput = document.getElementById("templateInput");
+  const templatePresetSelect = document.getElementById("templatePresetSelect");
+  const exportQualitySlider = document.getElementById("exportQualitySlider");
+  const exportQualityBadge = document.getElementById("exportQualityBadge");
   const btnExecuteAuto = document.getElementById("btnExecuteAuto");
+  const btnExecuteExportJpeg = document.getElementById("btnExecuteExportJpeg");
   const btnExecuteMeta = document.getElementById("btnExecuteMeta");
   const btnExecuteRename = document.getElementById("btnExecuteRename");
   const btnExecuteStrip = document.getElementById("btnExecuteStrip");
@@ -66,6 +93,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const modalSize = document.getElementById("modalSize");
   const modalFormat = document.getElementById("modalFormat");
   const modalExifStatus = document.getElementById("modalExifStatus");
+  const modalTargetRenameBox = document.getElementById("modalTargetRenameBox");
+  const btnCopyTargetName = document.getElementById("btnCopyTargetName");
   const modalTitleContent = document.getElementById("modalTitleContent");
   const modalKeywordCount = document.getElementById("modalKeywordCount");
   const modalKeywordBadges = document.getElementById("modalKeywordBadges");
@@ -77,9 +106,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnCopyTitle = document.getElementById("btnCopyTitle");
   const btnCopyKeywords = document.getElementById("btnCopyKeywords");
   const copyToast = document.getElementById("copyToast");
+  const modalExportQuality = document.getElementById("modalExportQuality");
+  const btnModalExportJpeg = document.getElementById("btnModalExportJpeg");
+  const modalExportStatus = document.getElementById("modalExportStatus");
 
   // State
   let currentFolder = "foto";
+  let currentPreset = "default";
+  let presetItemsCache = [];
   let previewDebounceTimer = null;
   let isExecuting = false;
   let currentModalData = null;
@@ -120,22 +154,35 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Tab switching
-  tabTitles.addEventListener("click", () => {
-    tabTitles.classList.add("active");
-    tabKeywords.classList.remove("active");
-    paneTitles.classList.add("active");
-    paneKeywords.classList.remove("active");
-  });
+  // Tab switching helper
+  const allTabs = [
+    { btn: tabSqliteGrid, pane: paneSqliteGrid },
+    { btn: tabTitles, pane: paneTitles },
+    { btn: tabKeywords, pane: paneKeywords },
+    { btn: tabHistory, pane: paneHistory },
+  ];
 
-  tabKeywords.addEventListener("click", () => {
-    tabKeywords.classList.add("active");
-    tabTitles.classList.remove("active");
-    paneKeywords.classList.add("active");
-    paneTitles.classList.remove("active");
-  });
+  function setActiveTab(targetTab) {
+    allTabs.forEach(({ btn, pane }) => {
+      if (btn === targetTab.btn) {
+        btn.classList.add("active");
+        pane.classList.add("active");
+      } else {
+        btn.classList.remove("active");
+        pane.classList.remove("active");
+      }
+    });
+    if (targetTab.btn === tabHistory) {
+      loadHistory();
+    }
+  }
 
-  // View toggle
+  tabSqliteGrid.addEventListener("click", () => setActiveTab({ btn: tabSqliteGrid, pane: paneSqliteGrid }));
+  tabTitles.addEventListener("click", () => setActiveTab({ btn: tabTitles, pane: paneTitles }));
+  tabKeywords.addEventListener("click", () => setActiveTab({ btn: tabKeywords, pane: paneKeywords }));
+  tabHistory.addEventListener("click", () => setActiveTab({ btn: tabHistory, pane: paneHistory }));
+
+  // View toggle (Table vs Grid)
   btnViewTable.addEventListener("click", () => {
     btnViewTable.classList.add("active");
     btnViewGrid.classList.remove("active");
@@ -150,13 +197,314 @@ document.addEventListener("DOMContentLoaded", () => {
     gridViewContainer.style.display = "grid";
   });
 
-  // Clear logs
-  btnClearLogs.addEventListener("click", () => {
-    terminalOutput.innerHTML = "";
-    log("Log terminal dibersihkan.", "info");
+  // Template select quick pattern change
+  if (templatePresetSelect) {
+    templatePresetSelect.addEventListener("change", () => {
+      templateInput.value = templatePresetSelect.value;
+      triggerLivePreview();
+    });
+  }
+
+  // ==================== PRESET & SQLITE LOGIC ====================
+
+  async function loadPresets() {
+    try {
+      const res = await fetch("/api/presets");
+      const data = await res.json();
+      if (data.success && data.presets) {
+        presetSelect.innerHTML = "";
+        data.presets.forEach((p) => {
+          const opt = document.createElement("option");
+          opt.value = p.id;
+          opt.textContent = `${p.name} (${p.item_count || 0})`;
+          if (p.id === currentPreset) opt.selected = true;
+          presetSelect.appendChild(opt);
+        });
+        if (!data.presets.some((p) => p.id === currentPreset)) {
+          currentPreset = data.presets[0] ? data.presets[0].id : "default";
+        }
+        await loadPresetItems(currentPreset);
+      }
+    } catch (err) {
+      log("Gagal memuat preset: " + err.message, "err");
+    }
+  }
+
+  presetSelect.addEventListener("change", async () => {
+    currentPreset = presetSelect.value;
+    log(`Beralih ke preset '${currentPreset}'...`, "info");
+    await loadPresetItems(currentPreset);
   });
 
-  // Count titles & keywords
+  btnNewPreset.addEventListener("click", async () => {
+    const name = window.prompt("Masukkan nama preset baru:");
+    if (!name || !name.trim()) return;
+    const cleanId = name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+    try {
+      const res = await fetch("/api/presets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: cleanId, name: name.trim(), description: "Preset kustom" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        currentPreset = cleanId;
+        log(`Preset '${name.trim()}' berhasil dibuat.`, "ok");
+        await loadPresets();
+      } else {
+        alert("Gagal membuat preset: " + data.error);
+      }
+    } catch (err) {
+      log("Gagal membuat preset: " + err.message, "err");
+    }
+  });
+
+  btnDeletePreset.addEventListener("click", async () => {
+    if (currentPreset === "default") {
+      alert("Preset 'default' tidak dapat dihapus.");
+      return;
+    }
+    if (!window.confirm(`Hapus preset '${currentPreset}' beserta seluruh isinya?`)) return;
+    try {
+      const res = await fetch(`/api/presets?id=${encodeURIComponent(currentPreset)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        log(`Preset '${currentPreset}' dihapus.`, "ok");
+        currentPreset = "default";
+        await loadPresets();
+      }
+    } catch (err) {
+      log("Gagal menghapus preset: " + err.message, "err");
+    }
+  });
+
+  async function loadPresetItems(presetId) {
+    try {
+      const res = await fetch(`/api/preset-items?preset=${encodeURIComponent(presetId)}`);
+      const data = await res.json();
+      if (data.success) {
+        presetItemsCache = data.items || [];
+        renderSqliteGrid();
+        syncCacheToTextInputs();
+        triggerLivePreview();
+      }
+    } catch (err) {
+      log("Gagal memuat entri preset: " + err.message, "err");
+    }
+  }
+
+  function renderSqliteGrid() {
+    sqliteRowCount.textContent = presetItemsCache.length;
+    sqliteTableBody.innerHTML = "";
+
+    if (presetItemsCache.length === 0) {
+      sqliteTableBody.innerHTML = `
+        <tr>
+          <td colspan="4" class="empty-state">Preset '${currentPreset}' masih kosong. Klik '+ BARIS' atau 'IMPOR TEKS' untuk menambahkan.</td>
+        </tr>
+      `;
+      return;
+    }
+
+    presetItemsCache.forEach((it, idx) => {
+      const tr = document.createElement("tr");
+      const kwStr = Array.isArray(it.keywords) ? it.keywords.join(", ") : it.keywords || "";
+      tr.innerHTML = `
+        <td class="font-mono text-muted" style="text-align: center;">${idx + 1}</td>
+        <td>
+          <input type="text" class="sqlite-row-input row-title font-mono" data-idx="${idx}" value="${escapeHtml(it.title || "")}" placeholder="Judul foto...">
+        </td>
+        <td>
+          <input type="text" class="sqlite-row-input row-keywords font-mono" data-idx="${idx}" value="${escapeHtml(kwStr)}" placeholder="tag1, tag2, tag3...">
+        </td>
+        <td style="text-align: center;">
+          <button class="btn-xs btn-destructive btn-delete-row" data-idx="${idx}" title="Hapus baris">✕</button>
+        </td>
+      `;
+      sqliteTableBody.appendChild(tr);
+    });
+
+    // Attach row input listeners
+    document.querySelectorAll(".row-title").forEach((inp) => {
+      inp.addEventListener("input", (e) => {
+        const idx = parseInt(e.target.getAttribute("data-idx"), 10);
+        if (presetItemsCache[idx]) {
+          presetItemsCache[idx].title = e.target.value;
+          presetItemsCache[idx].caption = e.target.value;
+          syncCacheToTextInputs();
+          triggerLivePreview();
+        }
+      });
+    });
+
+    document.querySelectorAll(".row-keywords").forEach((inp) => {
+      inp.addEventListener("input", (e) => {
+        const idx = parseInt(e.target.getAttribute("data-idx"), 10);
+        if (presetItemsCache[idx]) {
+          presetItemsCache[idx].keywords = e.target.value.split(",").map((k) => k.trim()).filter(Boolean);
+          syncCacheToTextInputs();
+          triggerLivePreview();
+        }
+      });
+    });
+
+    document.querySelectorAll(".btn-delete-row").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const idx = parseInt(btn.getAttribute("data-idx"), 10);
+        presetItemsCache.splice(idx, 1);
+        renderSqliteGrid();
+        syncCacheToTextInputs();
+        triggerLivePreview();
+      });
+    });
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function syncCacheToTextInputs() {
+    titleInput.value = presetItemsCache.map((it) => it.title || "").join("\n");
+    keywordInput.value = presetItemsCache
+      .map((it) => (Array.isArray(it.keywords) ? it.keywords.join(", ") : it.keywords || ""))
+      .join("\n\n");
+    updateInputCounters();
+  }
+
+  btnAddRow.addEventListener("click", () => {
+    presetItemsCache.push({
+      title: "",
+      keywords: [],
+      caption: "",
+      author: "",
+    });
+    renderSqliteGrid();
+    syncCacheToTextInputs();
+    // Focus last row title input
+    const inputs = document.querySelectorAll(".row-title");
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  });
+
+  btnSaveDb.addEventListener("click", async () => {
+    try {
+      const res = await fetch("/api/preset-items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          presetId: currentPreset,
+          items: presetItemsCache,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        log(`Berhasil menyimpan ${data.count} entri ke SQLite (preset: '${currentPreset}').`, "ok");
+        await loadPresets();
+      }
+    } catch (err) {
+      log("Gagal menyimpan ke SQLite: " + err.message, "err");
+    }
+  });
+
+  btnClearDb.addEventListener("click", async () => {
+    if (!window.confirm(`Kosongkan semua entri pada preset '${currentPreset}'?`)) return;
+    presetItemsCache = [];
+    renderSqliteGrid();
+    syncCacheToTextInputs();
+    await btnSaveDb.click();
+  });
+
+  btnImportFromText.addEventListener("click", async () => {
+    try {
+      const res = await fetch("/api/preset-items/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          presetId: currentPreset,
+          titleText: titleInput.value,
+          keywordText: keywordInput.value,
+          mode: "replace",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        log(`Berhasil mengimpor ${data.count} entri dari teks ke SQLite preset '${currentPreset}'.`, "ok");
+        await loadPresetItems(currentPreset);
+      }
+    } catch (err) {
+      log("Gagal impor teks: " + err.message, "err");
+    }
+  });
+
+  btnExportToText.addEventListener("click", async () => {
+    try {
+      const res = await fetch(`/api/preset-items/export?preset=${encodeURIComponent(currentPreset)}`);
+      const data = await res.json();
+      if (data.success) {
+        titleInput.value = data.titlesText;
+        keywordInput.value = data.keywordsText;
+        updateInputCounters();
+        log(`Data preset '${currentPreset}' diekspor ke tab teks.`, "ok");
+        setActiveTab({ btn: tabTitles, pane: paneTitles });
+      }
+    } catch (err) {
+      log("Gagal ekspor teks: " + err.message, "err");
+    }
+  });
+
+  // History Tab Handler
+  async function loadHistory() {
+    try {
+      const res = await fetch("/api/history?limit=30");
+      const data = await res.json();
+      if (data.success && data.history) {
+        historyListContainer.innerHTML = "";
+        if (!data.history.length) {
+          historyListContainer.innerHTML = `<div class="empty-state">Belum ada riwayat operasi batch di SQLite.</div>`;
+          return;
+        }
+        data.history.forEach((h) => {
+          const item = document.createElement("div");
+          item.className = "history-card-item font-mono";
+          const d = new Date(h.timestamp).toLocaleString();
+          item.innerHTML = `
+            <div class="history-card-header">
+              <span class="history-op-badge">${h.operation}</span>
+              <span class="history-time">${d}</span>
+            </div>
+            <div class="history-summary">
+              <strong>${h.fileCount} file</strong> | Berhasil: <span class="text-emerald">${h.successCount}</span> | Gagal: <span class="${h.failCount > 0 ? 'text-danger' : 'text-muted'}">${h.failCount}</span>
+            </div>
+            <div class="text-muted" style="font-size: 0.68rem; white-space: pre-wrap;">${escapeHtml(h.logText || '')}</div>
+          `;
+          historyListContainer.appendChild(item);
+        });
+      }
+    } catch (err) {
+      log("Gagal memuat riwayat: " + err.message, "err");
+    }
+  }
+
+  btnRefreshHistory.addEventListener("click", loadHistory);
+  btnClearHistory.addEventListener("click", async () => {
+    if (!window.confirm("Bersihkan seluruh riwayat operasi batch di database SQLite?")) return;
+    try {
+      const res = await fetch("/api/history", { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        log("Riwayat operasi batch dibersihkan.", "ok");
+        loadHistory();
+      }
+    } catch (err) {
+      log("Gagal menghapus riwayat: " + err.message, "err");
+    }
+  });
+
+  // ==================== INPUT COUNTERS & LIVE PREVIEW ====================
+
   function updateInputCounters() {
     const tLines = titleInput.value
       .split(/\r?\n/)
@@ -180,7 +528,6 @@ document.addEventListener("DOMContentLoaded", () => {
     keywordGroupCount.textContent = kwGroups;
   }
 
-  // Debounced Live Preview
   function triggerLivePreview() {
     updateInputCounters();
     clearTimeout(previewDebounceTimer);
@@ -207,7 +554,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         currentFolder = folderSelect.value || "foto";
         folderPathText.textContent = currentFolder + "/";
-        await fetchInputsAndFiles();
+        await loadPresets();
+        await fetchLivePreview();
       }
     } catch (err) {
       log("Gagal memuat daftar folder: " + err.message, "err");
@@ -217,7 +565,7 @@ document.addEventListener("DOMContentLoaded", () => {
   folderSelect.addEventListener("change", () => {
     currentFolder = folderSelect.value;
     folderPathText.textContent = currentFolder + "/";
-    fetchInputsAndFiles();
+    fetchLivePreview();
   });
 
   btnRefreshFolders.addEventListener("click", () => {
@@ -225,30 +573,12 @@ document.addEventListener("DOMContentLoaded", () => {
     fetchFolders();
   });
 
-  // Fetch initial inputs and files
-  async function fetchInputsAndFiles() {
-    try {
-      // 1. Fetch Inputs
-      const inRes = await fetch(`/api/inputs?folder=${encodeURIComponent(currentFolder)}`);
-      const inData = await inRes.json();
-      if (inData.success) {
-        if (inData.titleText) titleInput.value = inData.titleText;
-        if (inData.keywordText) keywordInput.value = inData.keywordText;
-        updateInputCounters();
-      }
-
-      // 2. Trigger preview
-      await fetchLivePreview();
-    } catch (err) {
-      log("Gagal memuat data: " + err.message, "err");
-    }
-  }
-
   // Fetch Live Preview
   async function fetchLivePreview() {
     try {
       const payload = {
         folder: currentFolder,
+        preset: currentPreset,
         titleText: titleInput.value,
         keywordText: keywordInput.value,
         template: templateInput.value.trim() || "{title}",
@@ -312,7 +642,6 @@ document.addEventListener("DOMContentLoaded", () => {
       // Row for Table
       const tr = document.createElement("tr");
       const thumbUrl = `/api/thumb?file=${encodeURIComponent(item.filePath)}`;
-      const nameClass = item.isNameChanged ? "badge-changed" : "";
 
       // Badge TAGS untuk tabel & grid
       let tagBadgeHtml = "";
@@ -350,10 +679,14 @@ document.addEventListener("DOMContentLoaded", () => {
         gridTagBadgeHtml = `<span class="badge badge-skipped">0 TAGS</span>`;
       }
 
+      const displayTitle = item.mappedTitle || (item.currentTitle && item.currentTitle !== "-" ? item.currentTitle : "");
+
+      const mappedKwJson = JSON.stringify(item.mappedKeywords && item.mappedKeywords.length ? item.mappedKeywords : (item.currentKeywords || []));
+
       tr.innerHTML = `
         <td class="font-mono text-muted">${item.index}</td>
         <td>
-          <div class="thumb-cell" data-file="${encodeURIComponent(item.filePath)}" title="Klik untuk lihat detail metadata">
+          <div class="thumb-cell" data-file="${encodeURIComponent(item.filePath)}" data-planned="${encodeURIComponent(item.plannedName)}" data-title="${encodeURIComponent(item.mappedTitle || item.currentTitle || "")}" data-keywords="${encodeURIComponent(mappedKwJson)}" title="Klik untuk lihat detail metadata">
             <img src="${thumbUrl}" alt="Thumb" class="thumb-img" loading="lazy" onerror="this.src=''; this.alt='No preview';">
           </div>
         </td>
@@ -364,8 +697,8 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </td>
         <td>
-          <div class="text-truncate font-mono ${nameClass}" title="${item.plannedName}">
-            ${item.plannedName}
+          <div class="text-truncate font-mono" style="color: var(--stone-900); font-weight: 500;" title="${displayTitle || "(tidak ada judul)"}">
+            ${displayTitle || '<span class="text-muted" style="font-style: italic;">(belum ada judul)</span>'}
           </div>
         </td>
         <td>
@@ -377,7 +710,7 @@ document.addEventListener("DOMContentLoaded", () => {
           </span>
         </td>
         <td style="text-align: center;">
-          <button class="btn-xs btn-secondary btn-inspect" data-file="${encodeURIComponent(item.filePath)}">DETAIL</button>
+          <button class="btn-xs btn-secondary btn-inspect" data-file="${encodeURIComponent(item.filePath)}" data-planned="${encodeURIComponent(item.plannedName)}" data-title="${encodeURIComponent(item.mappedTitle || item.currentTitle || "")}" data-keywords="${encodeURIComponent(mappedKwJson)}">DETAIL</button>
         </td>
       `;
       previewTableBody.appendChild(tr);
@@ -386,7 +719,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const card = document.createElement("div");
       card.className = "grid-card-item";
       card.innerHTML = `
-        <img src="${thumbUrl}" alt="Thumb" class="grid-card-img" loading="lazy" data-file="${encodeURIComponent(item.filePath)}">
+        <img src="${thumbUrl}" alt="Thumb" class="grid-card-img" loading="lazy" data-file="${encodeURIComponent(item.filePath)}" data-planned="${encodeURIComponent(item.plannedName)}" data-title="${encodeURIComponent(item.mappedTitle || item.currentTitle || "")}" data-keywords="${encodeURIComponent(mappedKwJson)}">
         <div class="grid-card-meta font-mono">
           <div style="display: flex; justify-content: space-between;">
             <span class="text-muted">#${item.index}</span>
@@ -396,11 +729,10 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="file-sub-meta font-mono text-muted" title="Dimensi: ${item.dims || "-"} | Ukuran: ${item.sizeFmt || "-"}">
             <span>${item.dims || "-"}</span> • <span>${item.sizeFmt || "-"}</span>
           </div>
-          <div class="text-truncate ${nameClass}" title="${item.plannedName}">↳ ${item.plannedName}</div>
-          <div class="text-truncate text-muted" style="font-size: 0.7rem;" title="${item.mappedTitle}">${item.mappedTitle}</div>
+          <div class="text-truncate text-muted" style="font-size: 0.72rem; color: var(--stone-800);" title="${displayTitle}">${displayTitle || "-"}</div>
           <div class="grid-card-actions">
             ${gridTagBadgeHtml}
-            <button class="btn-xs btn-secondary btn-inspect" data-file="${encodeURIComponent(item.filePath)}">DETAIL</button>
+            <button class="btn-xs btn-secondary btn-inspect" data-file="${encodeURIComponent(item.filePath)}" data-planned="${encodeURIComponent(item.plannedName)}" data-title="${encodeURIComponent(item.mappedTitle || item.currentTitle || "")}" data-keywords="${encodeURIComponent(mappedKwJson)}">DETAIL</button>
           </div>
         </div>
       `;
@@ -411,20 +743,40 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Attach click listeners for inspect
     document.querySelectorAll(".btn-inspect, .thumb-cell, .grid-card-img").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        const filePath = decodeURIComponent(el.getAttribute("data-file"));
-        if (filePath) openMetadataModal(filePath);
+      el.addEventListener("click", () => {
+        const filePath = decodeURIComponent(el.getAttribute("data-file") || "");
+        const plannedName = decodeURIComponent(el.getAttribute("data-planned") || "");
+        const mappedTitle = decodeURIComponent(el.getAttribute("data-title") || "");
+        let mappedKeywords = [];
+        try {
+          const rawKw = el.getAttribute("data-keywords");
+          if (rawKw) mappedKeywords = JSON.parse(decodeURIComponent(rawKw));
+        } catch (e) {}
+        if (filePath) openMetadataModal(filePath, plannedName, mappedTitle, mappedKeywords);
       });
     });
   }
 
   // Metadata Inspector Modal Functions
-  async function openMetadataModal(filePath) {
+  async function openMetadataModal(filePath, plannedName = "", mappedTitle = "", mappedKeywords = []) {
     try {
       metaDetailModal.style.display = "flex";
       modalFileName.textContent = "Memuat metadata...";
       modalThumbImg.src = `/api/thumb?file=${encodeURIComponent(filePath)}`;
       setModalTab("summary");
+
+      if (modalExportStatus) {
+        modalExportStatus.style.display = "none";
+        modalExportStatus.className = "modal-export-status";
+        modalExportStatus.textContent = "";
+      }
+      if (btnModalExportJpeg) {
+        btnModalExportJpeg.disabled = false;
+        btnModalExportJpeg.textContent = "🖼️ EXPORT FOTO INI KE JPG";
+      }
+      if (modalExportQuality && exportQualitySlider) {
+        modalExportQuality.value = exportQualitySlider.value || "90";
+      }
 
       const res = await fetch(`/api/meta-detail?file=${encodeURIComponent(filePath)}`);
       const data = await res.json();
@@ -433,6 +785,9 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
+      data.plannedName = plannedName;
+      data.mappedTitle = mappedTitle;
+      data.mappedKeywords = mappedKeywords;
       currentModalData = data;
       renderModalContent(data);
     } catch (err) {
@@ -449,6 +804,11 @@ document.addEventListener("DOMContentLoaded", () => {
     modalSize.textContent = file.sizeFmt || "-";
     modalFormat.textContent = file.isJpeg ? "JPEG (.jpg)" : file.isPng ? "PNG (.png)" : "Gambar";
     modalExifStatus.textContent = file.exifPresent ? "TERSEDIA (EXIF)" : "TIDAK ADA EXIF";
+
+    // Target Rename
+    if (modalTargetRenameBox) {
+      modalTargetRenameBox.textContent = data.plannedName || file.name || "-";
+    }
 
     // Summary & Microstock
     modalTitleContent.textContent = meta.title || meta.description || "(Belum ada judul)";
@@ -556,6 +916,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 2500);
   }
 
+  if (btnCopyTargetName) {
+    btnCopyTargetName.addEventListener("click", () => {
+      if (currentModalData && currentModalData.plannedName) {
+        navigator.clipboard.writeText(currentModalData.plannedName).then(() => {
+          showCopyToast("Target nama baru berhasil disalin!");
+        });
+      }
+    });
+  }
+
   btnCopyTitle.addEventListener("click", () => {
     if (currentModalData && currentModalData.metadata && (currentModalData.metadata.title || currentModalData.metadata.description)) {
       const text = currentModalData.metadata.title || currentModalData.metadata.description;
@@ -574,7 +944,86 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Save / Load Handlers
+  // Single Image Export from Modal Detail Handler
+  if (btnModalExportJpeg) {
+    btnModalExportJpeg.addEventListener("click", async () => {
+      if (!currentModalData || !currentModalData.file || !currentModalData.file.fullPath) return;
+
+      const filePath = currentModalData.file.fullPath;
+      const fileName = currentModalData.file.name || "Foto";
+      const quality = modalExportQuality ? parseInt(modalExportQuality.value, 10) || 90 : 90;
+
+      const titleToUse = currentModalData.mappedTitle || (currentModalData.metadata && (currentModalData.metadata.title || currentModalData.metadata.description)) || "";
+      const keywordsToUse = (currentModalData.mappedKeywords && currentModalData.mappedKeywords.length)
+        ? currentModalData.mappedKeywords
+        : (currentModalData.metadata && currentModalData.metadata.keywords) || [];
+
+      btnModalExportJpeg.disabled = true;
+      btnModalExportJpeg.textContent = "⏳ MENGEKSPOR KE JPG...";
+      if (modalExportStatus) {
+        modalExportStatus.style.display = "block";
+        modalExportStatus.className = "modal-export-status status-loading";
+        modalExportStatus.textContent = `Sedang mengonversi ${fileName} ke JPEG (${quality}%)...`;
+      }
+
+      log(`[EXPORT] Mengekspor foto individual: ${fileName} ke JPEG (Kualitas: ${quality}%)...`, "info");
+
+      try {
+        const payload = {
+          folder: currentFolder,
+          preset: currentPreset,
+          files: [filePath],
+          singleTitle: titleToUse,
+          singleKeywords: keywordsToUse,
+          quality,
+        };
+
+        const res = await fetch("/api/export-jpeg", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (!data.success || data.failed > 0) {
+          const errMsg = data.error || (data.logs && data.logs.find((l) => l.startsWith("[ERROR]"))) || "Gagal melakukan ekspor JPEG";
+          if (modalExportStatus) {
+            modalExportStatus.className = "modal-export-status status-err";
+            modalExportStatus.textContent = `Gagal: ${errMsg}`;
+          }
+          log(`[ERROR] Ekspor ${fileName} gagal: ${errMsg}`, "err");
+        } else {
+          const outResult = (data.results && data.results[0]) || {};
+          const destName = outResult.destName || (fileName.replace(/\.[^.]+$/, "") + ".jpg");
+          const sizeFmt = outResult.sizeFmt || "";
+
+          if (modalExportStatus) {
+            modalExportStatus.className = "modal-export-status status-ok";
+            modalExportStatus.innerHTML = `✓ Berhasil diekspor: <strong>${destName}</strong> ${sizeFmt ? `(${sizeFmt})` : ""}`;
+          }
+          log(`[OK] Foto berhasil diekspor: ${destName} ${sizeFmt ? `(${sizeFmt})` : ""}`, "ok");
+          showCopyToast(`✓ Berhasil diekspor ke ${destName}`);
+
+          // Refresh data preview & history
+          await fetchLivePreview();
+          if (tabHistory.classList.contains("active")) {
+            loadHistory();
+          }
+        }
+      } catch (err) {
+        if (modalExportStatus) {
+          modalExportStatus.className = "modal-export-status status-err";
+          modalExportStatus.textContent = `Kesalahan: ${err.message}`;
+        }
+        log(`[ERROR] Ekspor ${fileName} error: ${err.message}`, "err");
+      } finally {
+        btnModalExportJpeg.disabled = false;
+        btnModalExportJpeg.textContent = "🖼️ EXPORT FOTO INI KE JPG";
+      }
+    });
+  }
+
+  // Save / Load Handlers for Text Tabs
   btnSaveTitles.addEventListener("click", async () => {
     try {
       const res = await fetch("/api/save-inputs", {
@@ -582,15 +1031,17 @@ document.addEventListener("DOMContentLoaded", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           folder: currentFolder,
+          preset: currentPreset,
           titleText: titleInput.value,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        log("Daftar judul berhasil disimpan ke title.txt.", "ok");
+        log("Daftar judul berhasil disimpan ke SQLite & file.", "ok");
+        await loadPresetItems(currentPreset);
       }
     } catch (err) {
-      log("Gagal menyimpan title.txt: " + err.message, "err");
+      log("Gagal menyimpan judul: " + err.message, "err");
     }
   });
 
@@ -601,26 +1052,28 @@ document.addEventListener("DOMContentLoaded", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           folder: currentFolder,
+          preset: currentPreset,
           keywordText: keywordInput.value,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        log("Daftar kata kunci berhasil disimpan ke keyword.txt.", "ok");
+        log("Daftar kata kunci berhasil disimpan ke SQLite & file.", "ok");
+        await loadPresetItems(currentPreset);
       }
     } catch (err) {
-      log("Gagal menyimpan keyword.txt: " + err.message, "err");
+      log("Gagal menyimpan kata kunci: " + err.message, "err");
     }
   });
 
   btnLoadTitles.addEventListener("click", async () => {
     try {
-      const res = await fetch(`/api/inputs?folder=${encodeURIComponent(currentFolder)}`);
+      const res = await fetch(`/api/inputs?folder=${encodeURIComponent(currentFolder)}&preset=${encodeURIComponent(currentPreset)}`);
       const data = await res.json();
       if (data.success && data.titleText) {
         titleInput.value = data.titleText;
         triggerLivePreview();
-        log("Daftar judul dimuat ulang dari " + data.titlePath, "info");
+        log("Daftar judul dimuat ulang.", "info");
       }
     } catch (err) {
       log("Gagal memuat judul: " + err.message, "err");
@@ -629,12 +1082,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   btnLoadKeywords.addEventListener("click", async () => {
     try {
-      const res = await fetch(`/api/inputs?folder=${encodeURIComponent(currentFolder)}`);
+      const res = await fetch(`/api/inputs?folder=${encodeURIComponent(currentFolder)}&preset=${encodeURIComponent(currentPreset)}`);
       const data = await res.json();
       if (data.success && data.keywordText) {
         keywordInput.value = data.keywordText;
         triggerLivePreview();
-        log("Daftar kata kunci dimuat ulang dari " + data.keywordPath, "info");
+        log("Daftar kata kunci dimuat ulang.", "info");
       }
     } catch (err) {
       log("Gagal memuat kata kunci: " + err.message, "err");
@@ -652,7 +1105,7 @@ document.addEventListener("DOMContentLoaded", () => {
       strip: "STRIP / HAPUS METADATA",
     };
 
-    const confirmMsg = `Konfirmasi: Jalankan '${actionLabels[action]}' pada folder '${currentFolder}'?`;
+    const confirmMsg = `Konfirmasi: Jalankan '${actionLabels[action]}' pada folder '${currentFolder}' menggunakan preset '${currentPreset}'?`;
     if (!window.confirm(confirmMsg)) return;
 
     isExecuting = true;
@@ -663,6 +1116,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const payload = {
         action,
         folder: currentFolder,
+        preset: currentPreset,
         titleText: titleInput.value,
         keywordText: keywordInput.value,
         template: templateInput.value.trim() || "{title}",
@@ -692,8 +1146,11 @@ document.addEventListener("DOMContentLoaded", () => {
         );
       }
 
-      // Refresh data & preview
-      await fetchInputsAndFiles();
+      // Refresh data & preview & history
+      await fetchLivePreview();
+      if (tabHistory.classList.contains("active")) {
+        loadHistory();
+      }
     } catch (err) {
       log("Kesalahan saat menjalankan eksekusi: " + err.message, "err");
     } finally {
@@ -702,8 +1159,70 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  if (exportQualitySlider && exportQualityBadge) {
+    exportQualitySlider.addEventListener("input", () => {
+      exportQualityBadge.textContent = exportQualitySlider.value + "%";
+    });
+  }
+
+  async function executeExportJpeg() {
+    if (isExecuting) return;
+
+    const quality = exportQualitySlider ? parseInt(exportQualitySlider.value, 10) || 90 : 90;
+    const confirmMsg = `Konfirmasi: Konversi seluruh gambar di folder '${currentFolder}' ke JPEG (${quality}% kualitas) dengan menyematkan metadata EXIF/IPTC/XMP dari preset '${currentPreset}'?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    isExecuting = true;
+    setExecutionState(true);
+    log(`Memulai konversi JPEG (Kualitas: ${quality}%)...`, "info");
+
+    try {
+      const payload = {
+        folder: currentFolder,
+        preset: currentPreset,
+        titleText: titleInput.value,
+        keywordText: keywordInput.value,
+        quality,
+      };
+
+      const res = await fetch("/api/export-jpeg", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        log("Export JPEG gagal: " + (data.error || "Terjadi kesalahan"), "err");
+      } else {
+        if (data.logs && data.logs.length) {
+          data.logs.forEach((line) => {
+            const isOk = line.startsWith("[OK]");
+            const isErr = line.startsWith("[ERROR]");
+            log(line, isOk ? "ok" : isErr ? "err" : "info");
+          });
+        }
+        log(
+          `Export JPEG Selesai: ${data.processed} berhasil diekspor, ${data.failed} gagal.`,
+          data.failed > 0 ? "err" : "ok"
+        );
+      }
+
+      await fetchLivePreview();
+      if (tabHistory.classList.contains("active")) {
+        loadHistory();
+      }
+    } catch (err) {
+      log("Kesalahan saat ekspor JPEG: " + err.message, "err");
+    } finally {
+      isExecuting = false;
+      setExecutionState(false);
+    }
+  }
+
   function setExecutionState(running) {
     btnExecuteAuto.disabled = running;
+    if (btnExecuteExportJpeg) btnExecuteExportJpeg.disabled = running;
     btnExecuteMeta.disabled = running;
     btnExecuteRename.disabled = running;
     btnExecuteStrip.disabled = running;
@@ -711,6 +1230,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   btnExecuteAuto.addEventListener("click", () => executeAction("auto"));
+  if (btnExecuteExportJpeg) btnExecuteExportJpeg.addEventListener("click", executeExportJpeg);
   btnExecuteMeta.addEventListener("click", () => executeAction("metadata"));
   btnExecuteRename.addEventListener("click", () => executeAction("rename"));
   btnExecuteStrip.addEventListener("click", () => executeAction("strip"));

@@ -18,29 +18,28 @@ dokumentasi & komentar: **Indonesia**.
 ## Perintah Penting
 
 ```bash
-npm start                         # 1 langkah: terapkan judul & kata kunci dari file daftar + rename ke judul
+npm start                         # 1 langkah: terapkan metadata SQLite (preset default) + rename ke judul
 npm run web                       # jalankan antarmuka grafis Web UI di http://localhost:3000
 node index.js --help              # semua perintah & opsi
-node index.js selftest            # pengujian internal (round-trip EXIF + template)
+node index.js selftest            # pengujian internal (round-trip EXIF, IPTC, XMP, PNG, SQLite, template)
 node index.js read "foto/*.jpg"   # baca metadata semua foto di folder kerja foto/
-node index.js rename "foto/*.jpg" --template "{title}" --titles title.txt --apply # rename batch dengan file judul
+node index.js db list             # tampilkan daftar preset SQLite
+node index.js rename "foto/*.jpg" --template "{title}" [--preset default] --apply # rename batch
 ```
 
 `npm run selftest` setara dengan `node index.js selftest`.
-
-> Catatan: di sebagian environment Windows tanpa Git Bash, perintah terminal tidak
-> tersedia. Jika begitu, validasi kode secara statis (review menyeluruh) dan minta
-> pengguna menjalankan `node index.js selftest` sendiri.
 
 ## Arsitektur
 
 ```
 index.js            Entry point (jalankan run(process.argv.slice(2)))
 imgmeta.cmd         Peluncur Windows
+imgmeta.db          Database SQLite lokal (presets, items, history, templates)
 foto/               Folder kerja: tempat foto yang akan diproses
-CHANGELOG.md        Riwayat perubahan versi (wajib diupdate tiap perubahan penting)
+docs/               Dokumentasi teknis & arsitektur (STRUKTUR_FOLDER.md, ANALISA.md, CHANGELOG.md)
 src/
-  cli.js            Parsing argumen (parseArgs) + perintah: web/auto/read/edit/apply/strip/rename
+  cli.js            Parsing argumen (parseArgs) + perintah: web/auto/read/edit/apply/db/strip/rename
+  db.js             Database SQLite bawaan Node.js (node:sqlite) — presets, items, history, templates
   server.js         HTTP server murni Node.js (REST API & static files untuk Web UI)
   jpeg.js           Parser struktur JPEG: segmen, APP1 "Exif\0\0", APP13 "Photoshop 3.0",
                     XMP, dimensi SOF; insertExif/removeExif, insertIptc/removeIptc, removeXmp

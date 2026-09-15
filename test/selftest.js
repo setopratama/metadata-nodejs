@@ -2,12 +2,16 @@
 // Jalankan dengan: node index.js selftest
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import * as jpeg from "../src/jpeg.js";
 import * as png from "../src/png.js";
 import * as exif from "../src/exif.js";
 import * as iptc from "../src/iptc.js";
 import * as utils from "../src/utils.js";
+import * as db from "../src/db.js";
+import * as imageMod from "../src/image.js";
 import { encodeGrayJpeg } from "../src/tinyjpeg.js";
+import * as meta from "../src/meta.js";
 import { buildExifView, collectIptcEdits, parseXmpMetadata } from "../src/meta.js";
 import { buildName } from "../src/rename.js";
 
@@ -246,6 +250,113 @@ export function runSelftest() {
   utils.resetFailures();
   assert(utils.getFailures().length === 0, "resetFailures mengosongkan kegagalan sesi");
   fs.unlinkSync(logPath);
+
+  // 7. Modul Database SQLite (src/db.js)
+  const testDbPath = path.join(process.cwd(), "test-imgmeta.db");
+  if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+
+  const testDb = db.getDb(testDbPath);
+  assert(testDb != null, "Inisialisasi database SQLite berhasil");
+
+  const presetObj1 = db.createPreset("stock-set", "Stock Set", "Kumpulan foto microstock", testDbPath);
+  assert(presetObj1 && presetObj1.id === "stock-set" && presetObj1.name === "Stock Set", "createPreset SQLite berhasil");
+
+  const presets = db.listPresets(testDbPath);
+  assert(presets.some((p) => p.id === "stock-set"), "listPresets memuat preset baru");
+
+  const item1 = db.addPresetItem("stock-set", {
+    title: "Mountain Sunrise Landscape",
+    keywords: ["mountain", "sunrise", "nature", "gold"],
+    caption: "Beautiful mountain landscape at sunrise",
+    author: "Seto",
+  }, testDbPath);
+  assert(item1 && item1.id != null && item1.sortOrder === 1, "addPresetItem berhasil menambahkan entri");
+
+  const items = db.getPresetItems("stock-set", testDbPath);
+  assert(
+    items.length === 1 && items[0].title === "Mountain Sunrise Landscape" && items[0].keywords.length === 4,
+    "getPresetItems membaca entri SQLite dengan benar"
+  );
+
+  const exp = db.exportPresetToText("stock-set", testDbPath);
+  assert(
+    exp.titlesText === "Mountain Sunrise Landscape" && exp.keywordsText.includes("mountain, sunrise"),
+    "exportPresetToText menghasilkan teks judul & kata kunci"
+  );
+
+  const imp = db.importTextToPreset("stock-set", {
+    titleText: "Judul 1\nJudul 2",
+    keywordText: "tag1, tag2\n\ntag3, tag4",
+    mode: "replace",
+  }, testDbPath);
+  assert(imp.length === 2 && imp[1].title === "Judul 2" && imp[1].keywords[0] === "tag3", "importTextToPreset mode replace berhasil");
+
+  db.recordHistory({
+    operation: "auto",
+    folder: "foto",
+    fileCount: 2,
+    successCount: 2,
+    failCount: 0,
+    logText: "Auto test OK",
+  }, testDbPath);
+
+  const history = db.getHistory(10, testDbPath);
+  assert(history.length === 1 && history[0].operation === "auto" && history[0].fileCount === 2, "recordHistory & getHistory SQLite berhasil");
+
+  db.clearPresetItems("stock-set", testDbPath);
+  assert(db.getPresetItems("stock-set", testDbPath).length === 0, "clearPresetItems mengosongkan item");
+
+  db.deletePreset("stock-set", testDbPath);
+  assert(!db.listPresets(testDbPath).some((p) => p.id === "stock-set"), "deletePreset menghapus preset");
+
+  db.closeDb();
+  if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+
+  // 8. Modul Image Processing & Export JPEG (src/image.js)
+  const rawRgbaScanlines = [];
+  for (let y = 0; y < 8; y++) {
+    rawRgbaScanlines.push(0); // filter type: 0 (None)
+    for (let x = 0; x < 8; x++) {
+      rawRgbaScanlines.push(200, 100, 50, 255); // RGBA
+    }
+  }
+  const idatData = zlib.deflateSync(Buffer.from(rawRgbaScanlines));
+  const idatChunk = png.buildPngChunk("IDAT", idatData);
+  const ihdrChunk8x8 = png.buildPngChunk("IHDR", Buffer.from([0, 0, 0, 8, 0, 0, 0, 8, 8, 6, 0, 0, 0])); // 8x8 RGBA (colorType 6)
+  const fullPng = Buffer.concat([pngHeader, ihdrChunk8x8, idatChunk, iendChunk]);
+
+  const decoded = imageMod.decodePng(fullPng);
+  assert(decoded.width === 8 && decoded.height === 8, "decodePng membaca dimensi 8x8");
+  assert(decoded.data[0] === 200 && decoded.data[1] === 100 && decoded.data[2] === 50, "decodePng mendekode piksel RGB");
+
+  const encodedJpeg = imageMod.encodeRgbToJpeg(decoded, 90);
+  assert(jpeg.isJpeg(encodedJpeg), "encodeRgbToJpeg menghasilkan JPEG valid");
+  const parsedEncJpeg = jpeg.parseJpeg(encodedJpeg);
+  assert(parsedEncJpeg.dims && parsedEncJpeg.dims.w === 8 && parsedEncJpeg.dims.h === 8, "Dimensi JPEG ter-encode terbaca 8x8");
+
+  const tmpPngPath = path.join(process.cwd(), "test-temp-input.png");
+  const tmpJpgPath = path.join(process.cwd(), "test-temp-output.jpg");
+  fs.writeFileSync(tmpPngPath, fullPng);
+
+  const expRes = imageMod.exportFileToJpeg(tmpPngPath, tmpJpgPath, {
+    quality: 95,
+    title: "Gunung Bromo Sunrise",
+    keywords: ["bromo", "sunrise", "volcano", "indonesia"],
+    caption: "Pemandangan indah Gunung Bromo saat matahari terbit",
+    author: "Seto Pratama",
+  });
+
+  assert(expRes && expRes.size > 0 && expRes.dims.w === 8, "exportFileToJpeg mengekspor berkas");
+  assert(fs.existsSync(tmpJpgPath), "Berkas JPEG output dibuat");
+
+  const exportedMeta = meta.readFileMeta(tmpJpgPath);
+  const expView = meta.buildExifView(exportedMeta.model, exportedMeta.dims, exportedMeta.iptc, exportedMeta.xmp);
+  assert(expView.title === "Gunung Bromo Sunrise", "Metadata EXIF/IPTC Title tersimpan di JPEG: " + expView.title);
+  assert(expView.keywords && expView.keywords.includes("bromo"), "Metadata Keywords tersimpan di JPEG");
+  assert(expView.author === "Seto Pratama", "Metadata Author tersimpan di JPEG: " + expView.author);
+
+  if (fs.existsSync(tmpPngPath)) fs.unlinkSync(tmpPngPath);
+  if (fs.existsSync(tmpJpgPath)) fs.unlinkSync(tmpJpgPath);
 
   console.log("");
   if (fail === 0) {

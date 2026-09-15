@@ -1,36 +1,39 @@
-# imgmeta — Ubah Metadata Foto & Rename File
+# imgmeta v1.1.0 — Metadata Engine & Batch Rename (SQLite Powered)
 
-CLI (aplikasi baris perintah) untuk **membaca & mengubah metadata foto** dan
-**mengganti nama file secara batch** menggunakan template. Dibangun dengan
-**Node.js murni tanpa dependensi** — cukup jalankan, tanpa perlu `npm install`.
+CLI & Web Engine untuk **membaca & mengubah metadata foto (EXIF, IPTC & XMP)**, **mengonversi PNG/gambar ke JPEG standar microstock**, **menyimpan data preset judul & kata kunci di database SQLite (`node:sqlite` bawaan)**, dan **mengganti nama file secara batch** menggunakan template. Dibangun dengan **Node.js murni tanpa dependensi eksternal**.
 
-> Catatan: Metadata **EXIF** (kamera, tanggal, GPS, dll.) didukung untuk file
-> **JPEG** (`.jpg` / `.jpeg`) dan **PNG** (`.png`). Metadata **IPTC** (judul, kata kunci,
-> keterangan, penulis) didukung untuk file **JPEG** dan diselaraskan ke EXIF `XPKeywords` & `ImageDescription` untuk **PNG**. File gambar lain tetap bisa di-rename.
+> 💡 **Dokumentasi Lengkap di Folder `docs/`**:
+> - [Panduan Struktur Folder](file:///d:/METADATA/docs/STRUKTUR_FOLDER.md) — Penjelasan detail arsitektur berkas & direktori.
+> - [Analisis Arsitektur & Master Prompt](file:///d:/METADATA/docs/ANALISA.md) — Bedah teknis mendalam dan panduan replikasi.
+> - [Changelog](file:///d:/METADATA/docs/CHANGELOG.md) — Riwayat pembaruan dan catatan rilis versi.
+
+---
 
 ## Fitur Utama
 
-- 🌐 **Web UI Interaktif (Industrial Minimalism)**: Antarmuka grafis browser yang bersih dan responsif sesuai spesifikasi [DESIGN.md](file:///d:/METADATA/DESIGN.md). Mendukung input judul & kata kunci, pemilih subfolder, live preview tabel/grid kartu gambar, serta eksekusi 1-klik ubah metadata dan rename batch.
-- 🚀 **Tanpa Dependensi Eksternal**: Node.js ESM murni (`>= 16`). Seluruh parser, serializer (JPEG, PNG, TIFF/EXIF, IPTC IIM 8BIM, Adobe XMP Dublin Core), dan HTTP server Web UI ditulis manual tanpa pustaka pihak ketiga.
-- 📷 **Metadata EXIF & IPTC Lengkap**:
-  - **EXIF**: Kamera (`Make`, `Model`), Lensa (`LensModel`), Software, Tanggal (`DateTimeOriginal`, `DateTimeDigitized`), Hak Cipta, Artis, Deskripsi (`ImageDescription`), Orientasi, dan Koordinat GPS (`Lat`, `Lon`, `Alt`, `DateStamp`, `TimeStamp`).
-  - **IPTC**: Judul (2:05), Kata Kunci (2:25), Keterangan/Deskripsi (2:120), Penulis (2:80) dengan dukungan charset UTF-8 (Record 1 Dataset 0x5A).
-- ⚡ **Proses Otomatis (`auto` / `npm start`)**: Sekali perintah untuk menerapkan judul & kata kunci dari file daftar (`title.txt` & `keyword.txt`) sekaligus mengganti nama file foto di folder `foto/` sesuai judulnya.
-- 📝 **Terapkan Metadata dari File Daftar (`apply`)**: Memetakan baris `title.txt` dan kelompok kata kunci `keyword.txt` (dipisahkan baris kosong) secara akurat ke foto yang diurutkan secara alami (*numeric natural sort*).
+- 🖼️ **Engine Export JPEG Native (`src/image.js`)**: Decoder PNG murni & Encoder JPEG baseline berkecepatan tinggi (**Fast AAN FDCT 8x8**) untuk konversi masal gambar PNG ke JPEG JFIF beresolusi tinggi (hingga 16MP+) lengkap dengan injeksi metadata EXIF, IPTC, dan Adobe XMP Dublin Core.
+- 💾 **Database SQLite Bawaan (`src/db.js`)**: Menggunakan modul standar `node:sqlite` (`DatabaseSync` Node.js >= 22) untuk menyimpan preset judul & kata kunci, riwayat eksekusi batch, dan template rename di `imgmeta.db`.
+- 🌐 **Web UI Interaktif (Industrial Minimalism)**: Antarmuka grafis browser yang bersih dan responsif sesuai spesifikasi [DESIGN.md](file:///d:/METADATA/DESIGN.md). Dilengkapi **Grid SQLite Editor**, tombol 1-klik **Export ke JPEG**, pemilih subfolder, live preview tabel/grid kartu gambar, dan eksekusi batch.
+- 🚀 **100% Tanpa Dependensi Eksternal**: Seluruh parser & serializer (JPEG, PNG, TIFF/EXIF, IPTC IIM 8BIM, Adobe XMP Dublin Core), SQLite engine, Image converter, dan HTTP server Web UI ditulis murni tanpa pustaka pihak ketiga.
+- 📷 **Metadata EXIF, IPTC & XMP Lengkap (Microstock Compliant)**:
+  - Kompatibel penuh dengan standar Adobe Stock, Shutterstock, & Freepik (`<dc:subject>`, `<dc:title>`, IPTC Dataset 2:05/2:25/2:120/2:80, EXIF IFD0 `XPKeywords`/`XPTitle`/`ImageDescription`).
+- ⚡ **Proses Otomatis (`auto` / `npm start`)**: Sekali perintah untuk menerapkan metadata dari database SQLite (atau file daftar) sekaligus mengganti nama file foto di folder `foto/` sesuai judulnya.
+- 🗄️ **Manajemen Database CLI (`db`)**: Subperintah `list`, `show`, `add`, `import`, `export`, `clear`, dan `delete` untuk mengelola preset metadata SQLite langsung dari terminal.
 - 🏷️ **Rename Batch Berbasis Template (`rename`)**: Mengubah nama file secara masal dengan token dinamis `{title}`, `{keywords}`, `{artist}`, `{make}`, `{model}`, `{lens}`, `{date}`, `{date:FORMAT}`, `{seq}`, `{seq:N}`, `{folder}`, `{name}`, `{ext}`.
-- 🔒 **Sanitasi & Two-Pass Batch Rename**: Pembersihan otomatis karakter ilegal Windows/Linux, strategi *Two-Pass Rename* untuk mencegah bentrok palsu dengan nama file lama saat generate ulang, penanganan duplikat nyata (` (2)`, ` (3)`), serta *fallback* nama asli jika judul kosong.
+- 🔒 **Sanitasi & Two-Pass Batch Rename**: Pembersihan otomatis karakter ilegal Windows/Linux, strategi *Two-Pass Rename* untuk mencegah bentrok palsu dengan nama file lama saat generate ulang.
 - 🛡️ **Pembersihan Metadata Privasi (`strip`)**: Menghapus seluruh metadata sensitif (EXIF, IPTC, XMP) dari foto.
-- 📋 **Log Kegagalan Otomatis**: Setiap kegagalan (rename, ubah metadata, strip, dll.) dicatat ke **`imgmeta.log`** di folder tempat perintah dijalankan — tidak perlu konfigurasi apa pun.
-- 🧪 **Pengujian Internal Terintegrasi (`selftest`)**: Pengujian mandiri untuk memverifikasi integritas pembacaan, penulisan, dan serialisasi metadata secara *round-trip*.
-- 📊 **Output JSON & Mode Simulasi**: Dukungan format JSON untuk pembacaan metadata (`read --json`) dan mode simulasi (*dry-run*) untuk perintah rename.
+- 📋 **Log Kegagalan & Riwayat Batch**: Setiap kegagalan operasi dicatat ke **`imgmeta.log`** dan tersimpan di riwayat database SQLite.
+- 🧪 **Pengujian Internal Terintegrasi (`selftest`)**: Rangkaian 78 pengujian mandiri (*round-trip* EXIF, IPTC, XMP, PNG, JPEG encoder/decoder, template rename, & SQLite).
+
+---
 
 ## Cara Menjalankan
 
-Pastikan [Node.js](https://nodejs.org) (versi 16 atau lebih baru) sudah terpasang.
+Pastikan [Node.js](https://nodejs.org) (versi 22 atau lebih baru) sudah terpasang.
 
 ```bash
-npm run web                   # jalankan Web UI di browser (default: http://localhost:3000)
-npm start                     # 1 langkah CLI: terapkan metadata + rename foto di folder foto/
+npm run web                   # jalankan Web UI di browser (http://localhost:3000)
+npm start                     # 1 langkah CLI: terapkan metadata SQLite (preset default) + rename foto di folder foto/
 npm run selftest              # jalankan pengujian internal
 ```
 
@@ -40,6 +43,8 @@ Di Windows, bisa juga menggunakan `imgmeta.cmd`:
 imgmeta.cmd read foto.jpg
 ```
 
+---
+
 ## Folder Foto Kerja (`foto/`)
 
 Folder **`foto/`** di root project adalah tempat meletakkan foto yang akan diproses.
@@ -48,120 +53,166 @@ Folder **`foto/`** di root project adalah tempat meletakkan foto yang akan dipro
 node index.js auto                               # proses otomatis foto di folder foto/
 ```
 
-## Perintah Utama
+---
 
-### 1. Proses Otomatis (`auto`)
+## Perintah Utama CLI
 
-Secara otomatis menerapkan judul & deskripsi dari `title.txt`, kata kunci dari `keyword.txt`, dan mengganti nama file sesuai judulnya:
+### 1. Manajemen Database SQLite (`db`)
+
+```bash
+# Tampilkan daftar preset di SQLite:
+node index.js db list
+
+# Tampilkan entri judul & kata kunci dalam preset:
+node index.js db show default
+
+# Tambah 1 entri ke preset:
+node index.js db add default --title "Dokter Ramah di Rumah Sakit" --keywords "dokter, medis, rumah sakit"
+
+# Impor dari file teks ke SQLite:
+node index.js db import default --titles title.txt --keywords keyword.txt
+
+# Ekspor dari SQLite ke file teks:
+node index.js db export default --titles title.txt --keywords keyword.txt
+
+# Kosongkan isi preset:
+node index.js db clear default
+```
+
+### 2. Proses Otomatis (`auto`)
+
+Secara otomatis menerapkan metadata dari database SQLite (preset `default`) dan mengganti nama file sesuai judulnya:
 
 ```bash
 npm start
-# atau: node index.js auto "foto/*.png"
+# atau: node index.js auto "foto/*.jpg" [--preset default]
 ```
 
-#### Format File Daftar (`title.txt` & `keyword.txt`):
-* **`title.txt`**: Satu judul per baris (baris kosong diabaikan otomatis). Baris ke-N akan dipetakan ke foto ke-N.
-* **`keyword.txt`**: Kata kunci per foto, di mana **baris kosong berfungsi sebagai pemisah kelompok foto** (kelompok ke-N ↔ foto ke-N). Kata kunci dalam satu kelompok foto dapat ditulis:
-  * **Dipisahkan koma dalam 1 baris**: `bad news, phone call, mouth closeup`
-  * **Atau 1 kata kunci per baris**:
-    ```text
-    bad news
-    phone call
-
-    anxiety
-    panic attack
-    ```
-
-### 2. Terapkan Metadata dari File Daftar (`apply`)
+### 3. Terapkan Metadata (`apply`)
 
 ```bash
+# Menggunakan preset SQLite:
+node index.js apply "foto/*.jpg" --preset default
+
+# Atau menggunakan file teks langsung:
 node index.js apply "foto/*.jpg" --titles title.txt --keywords-file keyword.txt [--no-backup]
 ```
 
-### 3. Baca Metadata (`read`)
+#### Format File Teks Warisan (`title.txt` & `keyword.txt`):
+* **`title.txt`**: Satu judul per baris (baris kosong diabaikan otomatis). Baris ke-N akan dipetakan ke foto ke-N.
+* **`keyword.txt`**: Kata kunci per foto, di mana **baris kosong berfungsi sebagai pemisah kelompok foto** (kelompok ke-N ↔ foto ke-N). Kata kunci dalam satu kelompok foto dapat ditulis:
+  * **Dipisahkan koma dalam 1 baris**: `doctor, hospital, healthcare icon`
+  * **Atau 1 kata kunci per baris**:
+    ```text
+    doctor
+    hospital
+
+    nurse
+    clinic
+    ```
+
+### 4. Konversi & Export ke JPEG (`export-jpeg`)
+
+Mengonversi file gambar (PNG / JPEG) ke JPEG baseline berkualitas tinggi dengan menyematkan metadata EXIF, IPTC, dan Adobe XMP Dublin Core secara otomatis:
+
+```bash
+# Export seluruh PNG di folder foto/ ke JPEG dengan kualitas 90%:
+node index.js export-jpeg "foto/*.png" --preset default
+
+# Export dengan kualitas khusus dan folder tujuan:
+node index.js export-jpeg "foto/*.png" --quality 95 --preset default --out-dir output_jpeg
+```
+
+### 5. Baca Metadata (`read`)
 
 ```bash
 node index.js read "foto/*.jpg"
 node index.js read foto.png --json
 ```
 
-### 4. Edit Metadata Manual (`edit`)
+### 5. Edit Metadata Manual (`edit`)
 
 ```bash
 node index.js edit foto.jpg --date "2020-01-15 08:30:00" --artist "Budi" --title "Judul Foto" --keywords "bali, pantai"
 ```
 
-### 5. Hapus Metadata Privasi (`strip`)
+### 6. Hapus Metadata Privasi (`strip`)
 
 ```bash
 node index.js strip foto.jpg [--no-backup]
 ```
 
-### 6. Rename Batch dengan Template (`rename`)
+### 7. Rename Batch dengan Template (`rename`)
 
 ```bash
 # Preview simulasi (dry-run):
 node index.js rename "foto/*.jpg" --template "{date:YYYYMMDD}_{seq:3}"
 
 # Eksekusi rename:
-node index.js rename "foto/*.jpg" --template "{title}" --apply
+node index.js rename "foto/*.jpg" --template "{title}" [--preset default] --apply
 ```
 
-### 7. Pengujian Internal (`selftest`)
+### 9. Pengujian Internal (`selftest`)
 
 ```bash
-node index.js selftest
+npm run selftest
+# atau: node index.js selftest
 ```
 
-### 8. Log Kegagalan (`imgmeta.log`)
+Menjalankan 78 pengujian round-trip EXIF, IPTC, XMP, PNG, JPEG decoding & Fast AAN FDCT encoding, template rename, penanganan bentrok nama, dan operasi database SQLite.
 
-Setiap kegagalan operasi dicatat secara otomatis ke **`imgmeta.log`** di folder
-tempat perintah dijalankan (mode *append* — riwayat kegagalan sebelumnya tidak
-ditimpa):
+### 10. Log Kegagalan (`imgmeta.log`)
+
+Setiap kegagalan operasi dicatat secara otomatis ke **`imgmeta.log`** di folder tempat perintah dijalankan (mode *append* — riwayat kegagalan sebelumnya tidak ditimpa):
 
 ```text
-[2026-08-18 14:30:22] [rename] foto/liburan.jpg — tidak dapat dibaca: ENOENT...
-[2026-08-18 14:30:25] [edit] foto/rusak.jpg — Format tidak didukung (hanya JPEG dan PNG): ...
+[2026-09-15 14:30:22] [rename] foto/liburan.jpg — tidak dapat dibaca: ENOENT...
+[2026-09-15 14:30:25] [edit] foto/rusak.jpg — Format tidak didukung: ...
 ```
 
-Operasi yang dicatat: `rename`, `edit`, `apply`, `auto`, `strip`, `expand`
-(file/glob/direktori tidak ditemukan), dan `cli` (error global). Jika folder
-tidak dapat ditulis, proses tetap berjalan dan peringatan ditampilkan di layar.
+Di akhir setiap perintah, ringkasan log kegagalan langsung ditampilkan di layar (*"Log kegagalan: tidak ada error"* bila bersih).
 
-**Di akhir setiap perintah**, ringkasan log kegagalan langsung ditampilkan di
-layar — bila ada error, baris-baris lognya dicetak beserta lokasi file
-`imgmeta.log`; bila bersih, muncul pesan *"Log kegagalan: tidak ada error."*.
-
+---
 
 ## Struktur Proyek
 
 ```
-index.js            Entry point
-imgmeta.cmd         Peluncur untuk Windows
-foto/               Folder kerja: letakkan foto yang akan diproses di sini
-AGENTS.md           Panduan untuk AI agent & kontributor
-src/
-  cli.js            Parsing argumen & perintah
-  jpeg.js           Parser struktur JPEG (segmen, APP1/APP13, dimensi)
-  png.js            Parser & serializer chunk PNG (eXIf, IHDR, CRC32)
-  exif.js           Parser & serializer EXIF/TIFF
-  iptc.js           Parser & serializer IPTC (judul, kata kunci, keterangan, penulis)
-  meta.js           Operasi baca/edit/strip metadata
-  rename.js         Rename batch + template
-  tinyjpeg.js       Encoder JPEG minimal (untuk pengujian)
-  utils.js          Utilitas (tanggal, glob, sanitasi nama, warna)
-test/
-  selftest.js       Pengujian internal (round-trip EXIF & template)
+METADATA/
+├── index.js                  # Entry point CLI (mengeksekusi src/cli.js)
+├── imgmeta.cmd               # Peluncur cepat untuk lingkungan Windows CMD / PowerShell
+├── imgmeta.db                # Database SQLite lokal (presets, items, history, templates)
+├── imgmeta.log               # Log kegagalan operasi batch
+├── package.json              # Konfigurasi npm package (v1.0.0, ESM murni, zero-dependency)
+├── README.md                 # Panduan umum pemakaian CLI & Web UI
+├── AGENTS.md                 # Panduan aturan baku untuk AI Agent / Developer
+├── docs/                     # Dokumentasi teknis & arsitektur
+│   ├── STRUKTUR_FOLDER.md    # Panduan struktur direktori
+│   ├── ANALISA.md            # Analisis arsitektur & master reference prompt
+│   └── CHANGELOG.md          # Riwayat perubahan dan rilis versi
+├── foto/                     # Folder kerja foto: tempat meletakkan file gambar
+├── src/                      # Modul inti backend & parser metadata (ESM murni)
+│   ├── cli.js                # Parser argumen CLI & handler perintah
+│   ├── db.js                 # Modul SQLite bawaan Node.js (node:sqlite)
+│   ├── server.js             # HTTP server murni Node.js (REST API & static server)
+│   ├── image.js              # Engine konversi PNG->JPEG & Fast AAN FDCT encoder
+│   ├── jpeg.js               # Parser struktur segmen JPEG (APP1, APP13, XMP, SOF)
+│   ├── png.js                # Parser chunk PNG (eXIf, iTXt, IHDR, CRC32)
+│   ├── exif.js               # Parser & serializer TIFF/EXIF
+│   ├── iptc.js               # Parser & serializer IPTC IIM Photoshop 8BIM
+│   ├── meta.js               # Lapisan orkestrasi metadata (EXIF, IPTC, XMP)
+│   ├── rename.js             # Batch renamer & generator template nama
+│   ├── utils.js              # Utilitas warna ANSI, format byte, log failure
+│   └── tinyjpeg.js           # Encoder JPEG 8x8 sintetis untuk pengujian
+├── public/                   # Frontend antarmuka Web UI (Industrial Minimalism)
+│   ├── index.html            # Markup HTML aplikasi Web UI
+│   ├── style.css             # Desain Industrial Minimalism
+│   └── app.js                # Logika frontend (SQLite Grid, Live Preview, Modal)
+├── test/                     # Pengujian internal & selftest
+│   └── selftest.js           # Test suite round-trip (78 pengujian)
+└── graphify-out/             # Output visualisasi knowledge graph /graphify
 ```
 
-## Pengujian
-
-```bash
-node index.js selftest
-```
-
-Menjalankan pengujian round-trip: menyisipkan metadata EXIF & IPTC, membaca
-ulang, mengubah tanggal, menghapus metadata, dan memverifikasi template rename.
+---
 
 ## Lisensi
 

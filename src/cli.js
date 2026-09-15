@@ -4,13 +4,15 @@ import path from "node:path";
 import * as utils from "./utils.js";
 import * as meta from "./meta.js";
 import * as renameMod from "./rename.js";
+import * as db from "./db.js";
+import * as imageMod from "./image.js";
 import { runSelftest } from "../test/selftest.js";
 import { startServer } from "./server.js";
 
-export const VERSION = "1.2.0";
+export const VERSION = "1.1.0";
 
 const BOOLEAN_OPTS = new Set([
-  "apply", "json", "touch", "no-backup", "remove-gps", "help", "version", "no-color", "no-open",
+  "apply", "json", "touch", "no-backup", "remove-gps", "help", "version", "no-color", "no-open", "keep-png",
 ]);
 
 function parseArgs(argv) {
@@ -43,33 +45,42 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  utils.info(utils.bold("imgmeta v" + VERSION + " - ubah metadata foto & rename file (tanpa dependensi)"));
+  utils.info(utils.bold("imgmeta v" + VERSION + " - ubah metadata foto & rename file (SQLite & node:sqlite bawaan)"));
   utils.info("");
   utils.info("Pemakaian: node index.js <perintah> [file...] [opsi]");
   utils.info("");
   utils.info("Perintah:");
-  utils.info("  web        Jalankan Web UI (antarmuka browser interaktif)");
-  utils.info("  auto       Proses otomatis: ubah metadata (title & keyword) sekaligus rename file sesuai title");
-  utils.info("  read       Baca metadata foto (EXIF & IPTC)");
-  utils.info("  edit       Ubah metadata (tanggal, GPS, artis, judul, tag, dll.)");
-  utils.info("  apply      Terapkan judul/deskripsi & kata kunci dari file daftar (title.txt, keyword.txt)");
-  utils.info("  strip      Hapus semua metadata (EXIF, IPTC, XMP)");
-  utils.info("  rename     Rename file batch dengan template");
-  utils.info("  selftest   Jalankan pengujian internal");
+  utils.info("  web          Jalankan Web UI (antarmuka browser interaktif)");
+  utils.info("  auto         Proses otomatis: terapkan metadata (SQLite/file) & rename file sesuai judul");
+  utils.info("  export-jpeg  Konversi gambar (PNG/JPEG) ke JPEG dengan metadata EXIF, IPTC & XMP");
+  utils.info("  read         Baca metadata foto (EXIF, IPTC & XMP)");
+  utils.info("  edit         Ubah metadata (tanggal, GPS, artis, judul, tag, dll.)");
+  utils.info("  apply        Terapkan judul & kata kunci (dari SQLite preset atau file daftar)");
+  utils.info("  db           Kelola database SQLite (presets, items, import/export)");
+  utils.info("  strip        Hapus semua metadata (EXIF, IPTC, XMP)");
+  utils.info("  rename       Rename file batch dengan template");
+  utils.info("  selftest     Jalankan pengujian internal");
+  utils.info("");
+  utils.info(utils.cyan("db:"));
+  utils.info("  node index.js db list                      Daftar semua preset di SQLite");
+  utils.info("  node index.js db show [preset]             Tampilkan data judul & kata kunci");
+  utils.info("  node index.js db add <preset> --title \"..\" Tambah entri ke preset");
+  utils.info("  node index.js db import <preset>           Impor dari title.txt / keyword.txt ke SQLite");
+  utils.info("  node index.js db export <preset>           Ekspor dari SQLite ke file teks");
+  utils.info("  node index.js db clear <preset>            Kosongkan isi preset");
+  utils.info("");
+  utils.info(utils.cyan("auto:"));
+  utils.info('  node index.js auto "foto/*.jpg" [--preset default]');
+  utils.info("  Menerapkan metadata dari SQLite (atau file daftar) dan me-rename file ke judulnya.");
+  utils.info("");
+  utils.info(utils.cyan("apply:"));
+  utils.info('  node index.js apply "*.jpg" [--preset default]');
+  utils.info('  node index.js apply "*.jpg" --titles title.txt --keywords-file keyword.txt');
+  utils.info("  Menerapkan metadata per foto dari database SQLite preset atau file teks.");
   utils.info("");
   utils.info(utils.cyan("web:"));
   utils.info("  node index.js web [--port 3000] [--no-open]");
   utils.info("  Membuka antarmuka grafis Web UI di browser (default port: 3000).");
-  utils.info("");
-  utils.info(utils.cyan("auto:"));
-  utils.info('  node index.js auto "foto/*.jpg"');
-  utils.info("  Secara otomatis membaca title.txt & keyword.txt, mengubah metadata IPTC, dan meng-ganti nama file ke judulnya.");
-  utils.info("");
-  utils.info(utils.cyan("apply:"));
-  utils.info('  node index.js apply "*.jpg" --titles title.txt --keywords-file keyword.txt');
-  utils.info("  title.txt:   satu baris per foto -> Judul + Deskripsi foto ke-N (file diurutkan).");
-  utils.info("  keyword.txt: satu kata kunci per baris; baris kosong memisahkan kelompok per foto.");
-  utils.info("  Baris kosong di title.txt = field dibiarkan. Backup .bak dibuat otomatis.");
   utils.info("");
   utils.info(utils.cyan("read:"));
   utils.info("  node index.js read foto1.jpg foto2.jpg [--json]");
@@ -81,19 +92,16 @@ function usage() {
   utils.info("  node index.js strip foto.jpg [--no-backup]");
   utils.info("");
   utils.info(utils.cyan("rename:"));
-  utils.info('  node index.js rename "*.jpg" --template "{date:YYYYMMDD}_{seq:3}" [--apply] [--start 1]');
-  utils.info('  node index.js rename "*.jpg" --template "{title}" --titles title.txt [--apply]');
-  utils.info("  Template: {name} {ext} {folder} {make} {model} {lens} {artist}");
-  utils.info("            {copyright} {description} {software} {title} {keywords}");
-  utils.info("            {width} {height} {seq} {seq:3} {date} {date:YYYYMMDD_HHmmss}");
-  utils.info("  {date} default: YYYY-MM-DD_HHmmss (dari EXIF, fallback ke tanggal file)");
-  utils.info("  Ekstensi asli otomatis ditambahkan bila template tidak memuat {ext}");
-  utils.info("  Default hanya menampilkan rencana; gunakan --apply untuk mengeksekusi.");
+  utils.info('  node index.js rename "*.jpg" --template "{date:YYYYMMDD}_{seq:3}" [--apply]');
+  utils.info('  node index.js rename "*.jpg" --template "{title}" [--preset default] [--apply]');
   utils.info("");
-  utils.info(utils.cyan("Log kegagalan:"));
-  utils.info("  Setiap kegagalan (rename, ubah metadata, strip, dll.) dicatat ke imgmeta.log");
-  utils.info("  di folder tempat perintah dijalankan, format: [tanggal] [operasi] file — pesan.");
-  utils.info("  Di akhir perintah, ringkasan log langsung ditampilkan (atau \"tidak ada error\").");
+  utils.info(utils.cyan("export-jpeg:"));
+  utils.info('  node index.js export-jpeg "foto/*.png" [--quality 90] [--preset default] [--out-dir out]');
+  utils.info("  Mengonversi file PNG ke JPEG standar microstock, menyematkan EXIF, IPTC & Adobe XMP.");
+  utils.info("");
+  utils.info(utils.cyan("Log kegagalan & Database:"));
+  utils.info("  Database SQLite tersimpan di imgmeta.db (otomatis tanpa instalasi).");
+  utils.info("  Setiap kegagalan dicatat ke imgmeta.log dan tersimpan di riwayat SQLite.");
   utils.info("");
 }
 
@@ -326,25 +334,119 @@ export function sortFilesByTitles(files, titles) {
   return slots;
 }
 
-// ---------- apply (judul/deskripsi & kata kunci dari file daftar) ----------
+// ---------- db (manajemen database SQLite) ----------
+function cmdDb(args, opts) {
+  const sub = args.shift() || "list";
+  if (sub === "list" || sub === "ls") {
+    const presets = db.listPresets();
+    utils.info(utils.bold("=== DAFTAR PRESET SQLITE (imgmeta.db) ==="));
+    if (!presets.length) {
+      utils.info("Belum ada preset.");
+      return;
+    }
+    for (const p of presets) {
+      utils.info(`  • ${utils.cyan(p.id.padEnd(16))} : ${p.name} (${p.item_count} entri) ${p.description ? utils.gray('- ' + p.description) : ''}`);
+    }
+    utils.info("");
+  } else if (sub === "show" || sub === "view") {
+    const presetId = args[0] || opts.preset || "default";
+    const preset = db.getPreset(presetId);
+    if (!preset) throw new Error("Preset tidak ditemukan: " + presetId);
+    const items = db.getPresetItems(presetId);
+    utils.info(utils.bold(`=== PRESET: ${preset.name} (${preset.id}) — ${items.length} entri ===`));
+    if (!items.length) {
+      utils.info("Preset ini belum memiliki entri.");
+      return;
+    }
+    items.forEach((it, idx) => {
+      utils.info(`[#${idx + 1}] ${utils.green(it.title || '(tanpa judul)')}`);
+      if (it.keywords.length) utils.info(`      Kata kunci : ${it.keywords.join(', ')}`);
+      if (it.author) utils.info(`      Penulis    : ${it.author}`);
+    });
+    utils.info("");
+  } else if (sub === "add") {
+    const presetId = args[0] || opts.preset || "default";
+    if (!opts.title && !opts.keywords) {
+      throw new Error("Gunakan --title \"...\" dan/atau --keywords \"...\"");
+    }
+    const item = db.addPresetItem(presetId, {
+      title: opts.title || "",
+      keywords: opts.keywords || "",
+      caption: opts.caption || opts.title || "",
+      author: opts.author || "",
+    });
+    utils.info(utils.green(`Entri #${item.sortOrder} berhasil ditambahkan ke preset '${presetId}'.`));
+  } else if (sub === "import") {
+    const presetId = args[0] || opts.preset || "default";
+    const titleFile = opts.titles || "title.txt";
+    const keywordFile = opts.keywords || opts["keywords-file"] || "keyword.txt";
+    
+    let titleText = "";
+    if (fs.existsSync(titleFile)) titleText = fs.readFileSync(titleFile, "utf8");
+    let keywordText = "";
+    if (fs.existsSync(keywordFile)) keywordText = fs.readFileSync(keywordFile, "utf8");
+
+    if (!titleText && !keywordText) {
+      throw new Error(`File sumber tidak ditemukan (${titleFile} / ${keywordFile}).`);
+    }
+
+    const mode = opts.append ? "append" : "replace";
+    const items = db.importTextToPreset(presetId, { titleText, keywordText, mode });
+    utils.info(utils.green(`Berhasil mengimpor ${items.length} entri ke preset '${presetId}' (mode: ${mode}).`));
+  } else if (sub === "export") {
+    const presetId = args[0] || opts.preset || "default";
+    const exp = db.exportPresetToText(presetId);
+    const titleOut = opts.titles || "title.txt";
+    const kwOut = opts.keywords || opts["keywords-file"] || "keyword.txt";
+
+    fs.writeFileSync(titleOut, exp.titlesText, "utf8");
+    fs.writeFileSync(kwOut, exp.keywordsText, "utf8");
+    utils.info(utils.green(`Berhasil mengekspor ${exp.items.length} entri ke '${titleOut}' dan '${kwOut}'.`));
+  } else if (sub === "clear") {
+    const presetId = args[0] || opts.preset || "default";
+    db.clearPresetItems(presetId);
+    utils.info(utils.green(`Seluruh entri pada preset '${presetId}' berhasil dikosongkan.`));
+  } else if (sub === "delete" || sub === "rm") {
+    const presetId = args[0] || opts.preset;
+    if (!presetId) throw new Error("Tentukan ID preset yang akan dihapus.");
+    db.deletePreset(presetId);
+    utils.info(utils.green(`Preset '${presetId}' berhasil dihapus.`));
+  } else {
+    throw new Error("Subperintah db tidak dikenal: " + sub + " (pilihan: list, show, add, import, export, clear, delete)");
+  }
+}
+
+// ---------- apply (judul/deskripsi & kata kunci dari SQLite / file daftar) ----------
 function cmdApply(files, opts) {
   if (!files.length) throw new Error("Perintah apply membutuhkan minimal 1 file/glob/direktori.");
-  if (!opts.titles && !opts["keywords-file"]) {
-    throw new Error("Berikan --titles <file> dan/atau --keywords-file <file>.");
-  }
 
   const rawList = renameMod.expandFiles(files);
   if (!rawList.length) throw new Error("Tidak ada file yang ditemukan.");
 
-  const titles = opts.titles ? parseTitles(readLines(opts.titles)) : null;
-  const keywordGroups = opts["keywords-file"]
-    ? utils.parseKeywordGroups(readLines(opts["keywords-file"]))
-    : null;
-  const noBackup = opts["no-backup"] === true;
+  let titles = null;
+  let keywordGroups = null;
 
+  if (opts.titles || opts["keywords-file"]) {
+    // Mode file teks
+    titles = opts.titles ? parseTitles(readLines(opts.titles)) : null;
+    keywordGroups = opts["keywords-file"]
+      ? utils.parseKeywordGroups(readLines(opts["keywords-file"]))
+      : null;
+  } else {
+    // Mode database SQLite
+    const presetId = opts.preset || "default";
+    const items = db.getPresetItems(presetId);
+    if (!items.length) {
+      throw new Error(`Preset '${presetId}' di SQLite kosong. Gunakan 'node index.js db import ${presetId}' atau tentukan file dengan --titles.`);
+    }
+    titles = items.map((it) => it.title).filter(Boolean);
+    keywordGroups = items.map((it) => it.keywords);
+  }
+
+  const noBackup = opts["no-backup"] === true;
   const list = sortFilesByTitles(rawList, titles);
 
-  utils.info("Menerapkan judul & kata kunci dari file daftar...");
+  utils.info("Menerapkan judul & kata kunci...");
   let applied = 0;
   let skipped = 0;
   let failed = 0;
@@ -353,11 +455,11 @@ function cmdApply(files, opts) {
     const editOpts = {};
     if (titles && i < titles.length && titles[i] !== "") {
       editOpts.title = titles[i];
-      editOpts.caption = titles[i]; // deskripsi memakai baris yang sama
+      editOpts.caption = titles[i];
       editOpts.description = titles[i];
     }
     if (keywordGroups && i < keywordGroups.length && keywordGroups[i].length) {
-      editOpts.keywords = keywordGroups[i]; // array utuh; collectIptcEdits menerima array
+      editOpts.keywords = keywordGroups[i];
     }
     if (!Object.keys(editOpts).length) {
       utils.warn(path.basename(f) + ": tidak ada baris untuk file ini — dilewati.");
@@ -377,16 +479,24 @@ function cmdApply(files, opts) {
 
   if (titles && titles.length > list.length) {
     utils.warn(
-      (opts.titles || "title.txt") + " memiliki " + (titles.length - list.length) +
+      "Daftar judul memiliki " + (titles.length - list.length) +
       " judul lebih banyak dari jumlah file — kelebihan diabaikan."
     );
   }
   if (keywordGroups && keywordGroups.length > list.length) {
     utils.warn(
-      "keyword.txt memiliki " + (keywordGroups.length - list.length) +
+      "Daftar kata kunci memiliki " + (keywordGroups.length - list.length) +
       " kelompok lebih banyak dari jumlah file — kelebihan diabaikan."
     );
   }
+
+  db.recordHistory({
+    operation: "apply",
+    fileCount: list.length,
+    successCount: applied,
+    failCount: failed,
+    logText: `Apply ${applied} file berhasil, ${skipped} dilewati, ${failed} gagal.`,
+  });
 
   utils.info("");
   utils.info(
@@ -400,18 +510,33 @@ function cmdAuto(files, opts) {
   const rawList = renameMod.expandFiles(targetFiles);
   if (!rawList.length) throw new Error("Tidak ada file yang ditemukan.");
 
-  const titleFile = opts.titles || "title.txt";
-  const keywordFile = opts["keywords-file"] || "keyword.txt";
-
-  const titles = fs.existsSync(titleFile) ? parseTitles(readLines(titleFile)) : null;
+  let titles = null;
   let keywordGroups = null;
-  if (fs.existsSync(keywordFile)) {
-    keywordGroups = utils.parseKeywordGroups(readLines(keywordFile));
+
+  if (opts.titles || opts["keywords-file"]) {
+    const titleFile = opts.titles || "title.txt";
+    const keywordFile = opts["keywords-file"] || "keyword.txt";
+    if (fs.existsSync(titleFile)) titles = parseTitles(readLines(titleFile));
+    if (fs.existsSync(keywordFile)) keywordGroups = utils.parseKeywordGroups(readLines(keywordFile));
+  } else {
+    const presetId = opts.preset || "default";
+    const items = db.getPresetItems(presetId);
+    if (items.length) {
+      titles = items.map((it) => it.title).filter(Boolean);
+      keywordGroups = items.map((it) => it.keywords);
+    } else {
+      // Fallback ke file teks jika preset kosong dan file ada
+      if (fs.existsSync("title.txt")) titles = parseTitles(readLines("title.txt"));
+      if (fs.existsSync("keyword.txt")) keywordGroups = utils.parseKeywordGroups(readLines("keyword.txt"));
+    }
   }
 
   const list = sortFilesByTitles(rawList, titles);
 
   utils.info("Proses otomatis: menerapkan metadata & mengganti nama file...");
+
+  let metaSuccess = 0;
+  let metaFailed = 0;
 
   // 1. Terapkan metadata ke seluruh file
   list.forEach((f, i) => {
@@ -428,7 +553,9 @@ function cmdAuto(files, opts) {
     if (Object.keys(editOpts).length > 1) {
       try {
         printEditResult(meta.editFile(f, editOpts));
+        metaSuccess++;
       } catch (e) {
+        metaFailed++;
         utils.err(f + ": gagal edit metadata (" + e.message + ")");
         utils.logFailure("auto", f, "gagal edit metadata: " + e.message);
       }
@@ -437,9 +564,17 @@ function cmdAuto(files, opts) {
 
   // 2. Rename batch seluruh file sesuai title
   utils.info("");
-  renameMod.runRename(list, "{title}", {
+  const renRes = renameMod.runRename(list, "{title}", {
     apply: true,
     titles: titles && titles.length ? titles : undefined,
+  });
+
+  db.recordHistory({
+    operation: "auto",
+    fileCount: list.length,
+    successCount: renRes.renamed,
+    failCount: renRes.failed + metaFailed,
+    logText: `Auto: ${metaSuccess} metadata diaplikasikan, ${renRes.renamed} rename berhasil.`,
   });
 
   utils.info("");
@@ -453,14 +588,100 @@ function cmdRename(files, opts) {
   const rawList = renameMod.expandFiles(files);
   if (!rawList.length) throw new Error("Tidak ada file yang ditemukan.");
 
-  const titles = opts.titles ? parseTitles(readLines(opts.titles)) : null;
+  let titles = null;
+  if (opts.titles) {
+    titles = parseTitles(readLines(opts.titles));
+  } else if (opts.preset) {
+    const items = db.getPresetItems(opts.preset);
+    titles = items.map((it) => it.title).filter(Boolean);
+  }
+
   const list = titles && titles.length ? sortFilesByTitles(rawList, titles) : rawList;
   const start = opts.start ? parseInt(opts.start, 10) || 1 : 1;
-  renameMod.runRename(list, opts.template, {
+  const renRes = renameMod.runRename(list, opts.template, {
     apply: Boolean(opts.apply),
     start,
     titles: titles && titles.length ? titles : undefined,
   });
+
+  if (opts.apply) {
+    db.recordHistory({
+      operation: "rename",
+      fileCount: list.length,
+      successCount: renRes.renamed,
+      failCount: renRes.failed,
+      logText: `Rename: ${renRes.renamed} diganti nama, ${renRes.unchanged} tetap. Template: ${opts.template}`,
+    });
+  }
+}
+
+// ---------- export-jpeg ----------
+function cmdExportJpeg(files, opts) {
+  if (!files.length) files = ["foto/*.png"];
+  const rawList = renameMod.expandFiles(files);
+  if (!rawList.length) throw new Error("Tidak ada file gambar yang ditemukan untuk diekspor ke JPEG.");
+
+  let titles = null;
+  let keywordGroups = null;
+  if (opts.titles) {
+    titles = parseTitles(readLines(opts.titles));
+  } else if (opts.preset) {
+    const items = db.getPresetItems(opts.preset);
+    titles = items.map((it) => it.title).filter(Boolean);
+    keywordGroups = items.map((it) => it.keywords);
+  }
+
+  if (opts["keywords-file"]) {
+    keywordGroups = utils.parseKeywordGroups(readLines(opts["keywords-file"]));
+  }
+
+  const list = titles && titles.length ? sortFilesByTitles(rawList, titles) : rawList;
+  const quality = opts.quality ? parseInt(opts.quality, 10) || 90 : 90;
+  const outDir = opts["out-dir"] || null;
+
+  utils.info(utils.bold(`Memulai export ${list.length} file ke JPEG (Kualitas: ${quality}%)...`));
+  let success = 0;
+  let failed = 0;
+
+  list.forEach((filePath, i) => {
+    try {
+      const ext = path.extname(filePath);
+      const baseName = path.basename(filePath, ext);
+      const mappedTitle = titles && i < titles.length ? titles[i] : undefined;
+      const mappedKeywords = keywordGroups && i < keywordGroups.length ? keywordGroups[i] : undefined;
+
+      const targetDir = outDir ? path.resolve(outDir) : path.dirname(filePath);
+      const destName = (mappedTitle ? utils.sanitizeName(mappedTitle) : baseName) + ".jpg";
+      const destPath = path.join(targetDir, destName);
+
+      const exportOpts = {
+        quality,
+        title: mappedTitle,
+        keywords: mappedKeywords,
+        caption: mappedTitle,
+        description: mappedTitle,
+      };
+
+      const res = imageMod.exportFileToJpeg(filePath, destPath, exportOpts);
+      success++;
+      utils.info(`  ${utils.green("OK")} ${path.basename(filePath)} -> ${path.basename(destPath)} (${utils.fmtBytes(res.size)}, ${res.timeMs}ms)`);
+    } catch (err) {
+      failed++;
+      utils.err(`  ${filePath}: gagal export JPEG (${err.message})`);
+      utils.logFailure("export_jpeg", filePath, err.message);
+    }
+  });
+
+  db.recordHistory({
+    operation: "export_jpeg",
+    fileCount: list.length,
+    successCount: success,
+    failCount: failed,
+    logText: `Export JPEG: ${success} berhasil, ${failed} gagal. Kualitas: ${quality}%`,
+  });
+
+  utils.info("");
+  utils.info(utils.green(`Selesai: ${success} file berhasil diekspor ke JPEG${failed ? `, ${failed} gagal` : ""}.`));
 }
 
 // ---------- ringkasan log kegagalan ----------
@@ -510,11 +731,21 @@ export function run(argv) {
       case "apply":
         cmdApply(files, opts);
         break;
+      case "db":
+      case "preset":
+      case "database":
+        cmdDb(files, opts);
+        break;
       case "strip":
         cmdStrip(files, opts);
         break;
       case "rename":
         cmdRename(files, opts);
+        break;
+      case "export-jpeg":
+      case "jpeg":
+      case "export":
+        cmdExportJpeg(files, opts);
         break;
       case "selftest":
         return runSelftest();
@@ -534,3 +765,4 @@ export function run(argv) {
     process.exitCode = 1;
   }
 }
+
