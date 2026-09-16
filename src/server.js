@@ -10,6 +10,7 @@ import * as meta from "./meta.js";
 import * as renameMod from "./rename.js";
 import * as db from "./db.js";
 import * as imageMod from "./image.js";
+import * as vectorMod from "./vector.js";
 import { parseTitles, sortFilesByTitles } from "./cli.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -233,8 +234,8 @@ async function handleRequest(req, res) {
           let view = null;
           try {
             r = meta.readFileMeta(fullPath);
-            if (r.model || r.iptc || r.xmp || r.text) {
-              view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text);
+            if (r.model || r.iptc || r.xmp || r.text || r.svgMeta) {
+              view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta);
             }
           } catch {}
 
@@ -248,6 +249,7 @@ async function handleRequest(req, res) {
             dims: r && r.dims ? `${r.dims.w}x${r.dims.h}` : "-",
             isJpeg: r ? r.isJpeg : false,
             isPng: r ? r.isPng : false,
+            isSvg: r ? r.isSvg : false,
             title: view && view.title ? view.title : "",
             caption: view && view.caption ? view.caption : "",
             description: view && view.description ? view.description : "",
@@ -296,8 +298,8 @@ async function handleRequest(req, res) {
         let view = null;
         try {
           r = meta.readFileMeta(fullPath);
-          if (r.model || r.iptc || r.xmp || r.text) {
-            view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text);
+          if (r.model || r.iptc || r.xmp || r.text || r.svgMeta) {
+            view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta);
           }
         } catch (err) {
           return sendJson(res, 500, { success: false, error: "Gagal membaca metadata: " + err.message });
@@ -318,6 +320,7 @@ async function handleRequest(req, res) {
             dims: r.dims ? `${r.dims.w} x ${r.dims.h}` : "-",
             isJpeg: r.isJpeg,
             isPng: r.isPng,
+            isSvg: r.isSvg,
             exifPresent: r.exifPresent,
           },
           metadata: view || {},
@@ -431,8 +434,8 @@ async function handleRequest(req, res) {
           let view = null;
           try {
             r = meta.readFileMeta(filePath);
-            if (r.model || r.iptc || r.xmp || r.text) {
-              view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text);
+            if (r.model || r.iptc || r.xmp || r.text || r.svgMeta) {
+              view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta);
             }
           } catch {}
 
@@ -458,6 +461,8 @@ async function handleRequest(req, res) {
               iptc: r ? r.iptc : null,
               isJpeg: r ? r.isJpeg : false,
               isPng: r ? r.isPng : false,
+              isSvg: r ? r.isSvg : false,
+              svgMeta: r ? r.svgMeta : null,
               mtime: r ? r.mtime : new Date(),
             });
           }
@@ -765,6 +770,159 @@ async function handleRequest(req, res) {
 
         db.recordHistory({
           operation: "export_jpeg",
+          folder,
+          fileCount: list.length,
+          successCount: success,
+          failCount: failed,
+          logText: logs.join("\n"),
+        });
+
+        return sendJson(res, 200, {
+          success: true,
+          total: list.length,
+          processed: success,
+          failed,
+          logs,
+          results,
+        });
+      }
+
+      // 7c. GET /api/vector-profiles
+      if (pathname === "/api/vector-profiles" && method === "GET") {
+        return sendJson(res, 200, {
+          success: true,
+          profiles: vectorMod.VECTOR_PROFILES,
+        });
+      }
+
+      // 7d. POST /api/export-vector
+      if (pathname === "/api/export-vector" && method === "POST") {
+        const body = await readJsonBody(req);
+        const {
+          folder = "foto",
+          profile = "microstock",
+          tracePreset,
+          mode,
+          hierarchical,
+          filterSpeckle,
+          colorPrecision,
+          maxColors,
+          simplify,
+          cornerThreshold,
+          layerDifference,
+          embedMetadata = true,
+          preset = "default",
+          titleText = "",
+          keywordText = "",
+          singleTitle = null,
+          singleKeywords = null,
+          outDir = "",
+          files: targetFiles = null,
+        } = body;
+
+        const targetFolderDir = path.resolve(ROOT_DIR, folder);
+        if (!targetFolderDir.startsWith(ROOT_DIR)) {
+          return sendJson(res, 403, { success: false, error: "Akses folder tidak valid." });
+        }
+
+        let rawFiles = [];
+        const isSingleTarget = Boolean(targetFiles && Array.isArray(targetFiles) && targetFiles.length === 1);
+        if (targetFiles && Array.isArray(targetFiles) && targetFiles.length) {
+          rawFiles = targetFiles.map((f) => (path.isAbsolute(f) ? f : path.resolve(ROOT_DIR, f)));
+        } else {
+          rawFiles = renameMod.expandFiles([targetFolderDir]);
+        }
+
+        if (!rawFiles.length) {
+          return sendJson(res, 400, { success: false, error: "Tidak ada file gambar untuk diekspor ke Vektor SVG." });
+        }
+
+        let effectiveTitleText = titleText;
+        let effectiveKeywordText = keywordText;
+
+        if (preset && (!titleText || !keywordText)) {
+          const items = db.getPresetItems(preset);
+          if (items.length) {
+            if (!effectiveTitleText) effectiveTitleText = items.map((it) => it.title).join("\n");
+            if (!effectiveKeywordText) effectiveKeywordText = items.map((it) => it.keywords.join(", ")).join("\n\n");
+          }
+        }
+
+        const titleLines = effectiveTitleText.split(/\r?\n/);
+        const titles = parseTitles(titleLines);
+        const keywordLines = effectiveKeywordText.split(/\r?\n/);
+        const keywordGroups = utils.parseKeywordGroups(keywordLines);
+
+        const list = isSingleTarget ? rawFiles : sortFilesByTitles(rawFiles, titles);
+        const logs = [];
+        const results = [];
+        let success = 0;
+        let failed = 0;
+
+        utils.resetFailures();
+        logs.push(`[VECTOR] Memulai export ${list.length} file ke Vektor SVG (Profil: ${profile}${mode ? `, Mode: ${mode}` : ""})...`);
+
+        list.forEach((filePath, i) => {
+          try {
+            const ext = path.extname(filePath);
+            const baseName = path.basename(filePath, ext);
+
+            let mappedTitle = titles && i < titles.length ? titles[i] : undefined;
+            let mappedKeywords = keywordGroups && i < keywordGroups.length ? keywordGroups[i] : undefined;
+
+            if (isSingleTarget) {
+              if (singleTitle !== null && singleTitle !== undefined) {
+                mappedTitle = singleTitle;
+              }
+              if (singleKeywords !== null && singleKeywords !== undefined) {
+                mappedKeywords = Array.isArray(singleKeywords) ? singleKeywords : [singleKeywords];
+              }
+            }
+
+            const targetDir = outDir ? path.resolve(ROOT_DIR, outDir) : path.dirname(filePath);
+            const destName = (mappedTitle ? utils.sanitizeName(mappedTitle) : baseName) + ".svg";
+            const destPath = path.join(targetDir, destName);
+
+            const exportOpts = {
+              profile,
+              preset: tracePreset,
+              mode,
+              hierarchical,
+              filterSpeckle,
+              colorPrecision,
+              maxColors,
+              simplify,
+              cornerThreshold,
+              layerDifference,
+              embedMetadata: embedMetadata !== false,
+              title: mappedTitle,
+              keywords: mappedKeywords,
+              caption: mappedTitle,
+              description: mappedTitle,
+            };
+
+            const resExp = vectorMod.exportFileToVector(filePath, destPath, exportOpts);
+            success++;
+            logs.push(`[OK] ${path.basename(filePath)} -> ${path.basename(destPath)} (${utils.fmtBytes(resExp.size)}, ${resExp.timeMs}ms)`);
+            results.push({
+              src: filePath,
+              dest: destPath,
+              destName,
+              size: resExp.size,
+              sizeFmt: utils.fmtBytes(resExp.size),
+              timeMs: resExp.timeMs,
+              status: "SUCCESS",
+            });
+          } catch (err) {
+            failed++;
+            logs.push(`[ERROR] ${path.basename(filePath)}: ${err.message}`);
+            utils.logFailure("api_export_vector", filePath, err.message);
+            results.push({ src: filePath, status: "FAILED", error: err.message });
+          }
+        });
+
+        db.recordHistory({
+          operation: "export_vector",
           folder,
           fileCount: list.length,
           successCount: success,

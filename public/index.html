@@ -202,6 +202,25 @@
                   <input type="range" id="exportQualitySlider" min="50" max="100" value="90" class="slider-input">
                 </div>
               </div>
+              <div class="form-row">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <label for="vectorProfileSelect" class="form-label" style="margin-bottom: 0;">PROFIL VEKTOR (SVG)</label>
+                  <button id="btnOpenVectorSettings" type="button" class="btn-xs btn-secondary font-mono" title="Buka pengaturan parameter kurva, warna, dan struktur layer" style="color: #0284c7; border-color: #0284c7;">⚙️ PARAMETER</button>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <select id="vectorProfileSelect" class="select-input font-mono" style="flex: 1;">
+                    <option value="microstock" selected>🌟 Microstock Clean (Cutout)</option>
+                    <option value="flat">🎨 Flat Clipart & Logo</option>
+                    <option value="pixel">👾 Pixel Art to Vector</option>
+                    <option value="photo">📸 Detailed Photo Trace</option>
+                    <option value="bw">⚫ Black & White (Siluet)</option>
+                    <option value="custom">🛠️ Kustom (Atur Sendiri)...</option>
+                  </select>
+                </div>
+                <div id="vectorSettingsSummaryBadge" class="text-muted font-mono" style="font-size: 11px; margin-top: 5px; color: #0369a1;">
+                  Cutout • Spline • Node: 1.5 • Noise: 8px • MaxColor: 32
+                </div>
+              </div>
             </div>
 
             <!-- Action Buttons -->
@@ -211,6 +230,9 @@
               </button>
               <button id="btnExecuteExportJpeg" class="btn btn-warning btn-block font-mono">
                 🖼️ EXPORT KE JPEG (MICROSTOCK READY)
+              </button>
+              <button id="btnExecuteExportVector" class="btn btn-block font-mono" style="background-color: #0284c7; color: #ffffff;">
+                📐 EXPORT KE VEKTOR SVG (VTRACER)
               </button>
               <div class="secondary-actions-row">
                 <button id="btnExecuteMeta" class="btn btn-secondary btn-sm">HANYA METADATA</button>
@@ -354,6 +376,37 @@
               </div>
             </div>
 
+            <!-- Single Image Export to Vector SVG Action Card -->
+            <div class="modal-export-card font-mono" style="margin-top: 10px; border-color: #0284c7;">
+              <div class="modal-export-header">
+                <div class="modal-export-title">
+                  <span class="badge font-mono" style="background-color: #0284c7; color: #ffffff;">EXPORT SVG</span>
+                  <span class="modal-export-heading">VEKTORISASI FOTO INI KE SVG</span>
+                </div>
+                <div class="modal-export-quality">
+                  <label for="modalVectorPreset" class="modal-export-quality-label">PROFIL:</label>
+                  <select id="modalVectorPreset" class="select-input-xs font-mono">
+                    <option value="microstock" selected>Microstock Clean</option>
+                    <option value="flat">Flat Clipart</option>
+                    <option value="pixel">Pixel Art</option>
+                    <option value="photo">Detailed Photo</option>
+                    <option value="bw">Black & White</option>
+                  </select>
+                </div>
+              </div>
+              <div class="modal-export-content">
+                <p class="modal-export-desc text-muted">
+                  Mengonversi gambar raster ke kurva vektor SVG berbasis WebAssembly (<code>@visioncortex/vtracer</code>) serta menyematkan metadata Dublin Core.
+                </p>
+                <div class="modal-export-btn-group">
+                  <button id="btnModalExportVector" class="btn btn-sm font-mono btn-block" style="background-color: #0284c7; color: #ffffff;">
+                    📐 EXPORT FOTO INI KE VEKTOR SVG
+                  </button>
+                </div>
+                <div id="modalExportVectorStatus" class="modal-export-status" style="display: none;"></div>
+              </div>
+            </div>
+
             <div class="detail-section">
               <div class="section-title-bar">
                 <span>TARGET NAMA FILE BARU (SIMULASI RENAME)</span>
@@ -422,6 +475,134 @@
         <div class="modal-footer">
           <span id="copyToast" class="copy-toast font-mono" style="display: none;">Teks berhasil disalin ke clipboard!</span>
           <button id="modalCloseBtnBottom" class="btn btn-secondary btn-sm">TUTUP</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Pengaturan Parameter Vektor Lanjutan -->
+    <div id="vectorSettingsModal" class="modal-backdrop" style="display: none;">
+      <div class="modal-window" style="max-width: 620px;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <span class="badge font-mono" style="background-color: #0284c7; color: #ffffff;">VEKTOR ENGINE</span>
+            <span class="modal-title font-mono">PENGATURAN PARAMETER TRACING SVG</span>
+          </div>
+          <button id="btnVectorSettingsClose" type="button" class="btn-xs btn-secondary font-mono">✕ TUTUP</button>
+        </div>
+
+        <div class="modal-body" style="padding: 1.25rem; overflow-y: auto; max-height: 72vh;">
+          <!-- Pilihan Profil Cepat -->
+          <div class="form-row" style="margin-bottom: 1rem;">
+            <label for="cfgVectorProfile" class="form-label font-bold" style="color: #0284c7;">PROFIL PRESET SIAP PAKAI</label>
+            <select id="cfgVectorProfile" class="select-input font-mono">
+              <option value="microstock" selected>🌟 Microstock Clean (Cutout, Minim Node, Siap Jual)</option>
+              <option value="flat">🎨 Flat Clipart & Logo (Sederhana & Kontras)</option>
+              <option value="pixel">👾 Pixel Art to Vector (Kotak Piksel 1:1)</option>
+              <option value="photo">📸 Detailed Photo Trace (Gradasi Halus Realistis)</option>
+              <option value="bw">⚫ Black & White (Siluet / Stempel Monokrom)</option>
+              <option value="custom">🛠️ Kustom (Konfigurasi Manual)</option>
+            </select>
+            <p id="cfgProfileDesc" class="text-muted font-mono" style="font-size: 11px; margin-top: 4px;">
+              Kurva rapi, potongan cutout (tanpa layer bertumpuk), minim node, standar kurasi microstock.
+            </p>
+          </div>
+
+          <hr style="border: 0; border-top: 1px solid var(--stone-200); margin: 0.85rem 0;">
+
+          <!-- Geometri & Kurva -->
+          <h4 class="font-mono font-bold" style="font-size: 11px; margin-bottom: 8px; color: var(--stone-700); letter-spacing: 0.5px;">1. GEOMETRI & STRUKTUR PATH</h4>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <div class="form-row">
+              <label for="cfgVectorMode" class="form-label" style="font-size: 11px;">MODE KURVA</label>
+              <select id="cfgVectorMode" class="select-input font-mono">
+                <option value="spline" selected>Spline (Bezier Mulus)</option>
+                <option value="polygon">Polygon (Garis Sudut Lurus)</option>
+                <option value="pixel">Pixel (Kotak Piksel)</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label for="cfgVectorHierarchical" class="form-label" style="font-size: 11px;">STRUKTUR LAYER</label>
+              <select id="cfgVectorHierarchical" class="select-input font-mono">
+                <option value="cutout" selected>Cutout (Disukai Microstock)</option>
+                <option value="stacked">Stacked (Bertumpuk Celah 0)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label for="cfgVectorSimplify" class="form-label" style="margin-bottom: 0; font-size: 11px;">SIMPLIFIKASI NODE KURVA</label>
+              <span id="cfgVectorSimplifyBadge" class="badge font-mono">1.5 px</span>
+            </div>
+            <input type="range" id="cfgVectorSimplify" min="0" max="3" step="0.1" value="1.5" class="slider-input">
+            <span class="text-muted font-mono" style="font-size: 10px;">Nilai 1.0–2.0 memangkas 40%–60% anchor points tanpa merusak bentuk kurva.</span>
+          </div>
+
+          <div class="form-row" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label for="cfgVectorCorner" class="form-label" style="margin-bottom: 0; font-size: 11px;">KETAJAMAN SUDUT (DERAJAT)</label>
+              <span id="cfgVectorCornerBadge" class="badge font-mono">60°</span>
+            </div>
+            <input type="range" id="cfgVectorCorner" min="30" max="120" step="5" value="60" class="slider-input">
+          </div>
+
+          <hr style="border: 0; border-top: 1px solid var(--stone-200); margin: 0.85rem 0;">
+
+          <!-- Warna & Pembersih Noise -->
+          <h4 class="font-mono font-bold" style="font-size: 11px; margin-bottom: 8px; color: var(--stone-700); letter-spacing: 0.5px;">2. WARNA & PEMBERSIH NOISE</h4>
+
+          <div class="form-row" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label for="cfgVectorSpeckle" class="form-label" style="margin-bottom: 0; font-size: 11px;">FILTER PEMBERSIH NOISE (SPECKLE)</label>
+              <span id="cfgVectorSpeckleBadge" class="badge font-mono">8 px</span>
+            </div>
+            <input type="range" id="cfgVectorSpeckle" min="0" max="32" step="1" value="8" class="slider-input">
+            <span class="text-muted font-mono" style="font-size: 10px;">Mengabaikan pulau-pulau piksel kecil agar vektor bersih dari bintik kotor.</span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <div class="form-row">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label for="cfgVectorPrecision" class="form-label" style="margin-bottom: 0; font-size: 11px;">PRESISI WARNA</label>
+                <span id="cfgVectorPrecisionBadge" class="badge font-mono">6</span>
+              </div>
+              <input type="range" id="cfgVectorPrecision" min="1" max="8" step="1" value="6" class="slider-input">
+            </div>
+            <div class="form-row">
+              <label for="cfgVectorMaxColors" class="form-label" style="font-size: 11px;">BATAS MAKSIMAL WARNA</label>
+              <select id="cfgVectorMaxColors" class="select-input font-mono">
+                <option value="0">0 (Otomatis / Tanpa Batas)</option>
+                <option value="4">4 Warna</option>
+                <option value="8">8 Warna</option>
+                <option value="16">16 Warna</option>
+                <option value="32" selected>32 Warna (Standar Stok)</option>
+                <option value="64">64 Warna</option>
+              </select>
+            </div>
+          </div>
+
+          <hr style="border: 0; border-top: 1px solid var(--stone-200); margin: 0.85rem 0;">
+
+          <!-- Metadata & Output -->
+          <h4 class="font-mono font-bold" style="font-size: 11px; margin-bottom: 8px; color: var(--stone-700); letter-spacing: 0.5px;">3. METADATA & OUTPUT</h4>
+
+          <div class="form-row" style="margin-bottom: 8px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px;">
+              <input type="checkbox" id="cfgVectorEmbedMeta" checked style="accent-color: #0284c7; width: 16px; height: 16px;">
+              <span class="font-bold">Sematkan Metadata Microstock ke SVG (&lt;title&gt;, &lt;desc&gt;, Dublin Core &lt;dc:subject&gt;)</span>
+            </label>
+          </div>
+
+          <div class="form-row">
+            <label for="cfgVectorOutDir" class="form-label" style="font-size: 11px;">FOLDER TUJUAN OUTPUT (OPSIONAL)</label>
+            <input type="text" id="cfgVectorOutDir" placeholder="Kosongkan untuk simpan di folder yang sama" class="text-input font-mono" style="font-size: 12px;">
+          </div>
+        </div>
+
+        <div class="modal-footer" style="display: flex; justify-content: space-between;">
+          <button id="btnVectorResetDefaults" type="button" class="btn btn-secondary btn-sm font-mono">RESET DEFAULT MICROSTOCK</button>
+          <button id="btnVectorSaveSettings" type="button" class="btn btn-sm font-mono" style="background-color: #0284c7; color: #ffffff;">SIMPAN & TERAPKAN</button>
         </div>
       </div>
     </div>

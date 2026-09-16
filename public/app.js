@@ -53,6 +53,32 @@ document.addEventListener("DOMContentLoaded", () => {
   const exportQualityBadge = document.getElementById("exportQualityBadge");
   const btnExecuteAuto = document.getElementById("btnExecuteAuto");
   const btnExecuteExportJpeg = document.getElementById("btnExecuteExportJpeg");
+  const btnExecuteExportVector = document.getElementById("btnExecuteExportVector");
+  const vectorProfileSelect = document.getElementById("vectorProfileSelect");
+  const btnOpenVectorSettings = document.getElementById("btnOpenVectorSettings");
+  const vectorSettingsSummaryBadge = document.getElementById("vectorSettingsSummaryBadge");
+
+  // Vector Settings Modal Elements
+  const vectorSettingsModal = document.getElementById("vectorSettingsModal");
+  const btnVectorSettingsClose = document.getElementById("btnVectorSettingsClose");
+  const btnVectorResetDefaults = document.getElementById("btnVectorResetDefaults");
+  const btnVectorSaveSettings = document.getElementById("btnVectorSaveSettings");
+  const cfgVectorProfile = document.getElementById("cfgVectorProfile");
+  const cfgProfileDesc = document.getElementById("cfgProfileDesc");
+  const cfgVectorMode = document.getElementById("cfgVectorMode");
+  const cfgVectorHierarchical = document.getElementById("cfgVectorHierarchical");
+  const cfgVectorSimplify = document.getElementById("cfgVectorSimplify");
+  const cfgVectorSimplifyBadge = document.getElementById("cfgVectorSimplifyBadge");
+  const cfgVectorCorner = document.getElementById("cfgVectorCorner");
+  const cfgVectorCornerBadge = document.getElementById("cfgVectorCornerBadge");
+  const cfgVectorSpeckle = document.getElementById("cfgVectorSpeckle");
+  const cfgVectorSpeckleBadge = document.getElementById("cfgVectorSpeckleBadge");
+  const cfgVectorPrecision = document.getElementById("cfgVectorPrecision");
+  const cfgVectorPrecisionBadge = document.getElementById("cfgVectorPrecisionBadge");
+  const cfgVectorMaxColors = document.getElementById("cfgVectorMaxColors");
+  const cfgVectorEmbedMeta = document.getElementById("cfgVectorEmbedMeta");
+  const cfgVectorOutDir = document.getElementById("cfgVectorOutDir");
+
   const btnExecuteMeta = document.getElementById("btnExecuteMeta");
   const btnExecuteRename = document.getElementById("btnExecuteRename");
   const btnExecuteStrip = document.getElementById("btnExecuteStrip");
@@ -109,6 +135,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const modalExportQuality = document.getElementById("modalExportQuality");
   const btnModalExportJpeg = document.getElementById("btnModalExportJpeg");
   const modalExportStatus = document.getElementById("modalExportStatus");
+  const modalVectorPreset = document.getElementById("modalVectorPreset");
+  const btnModalExportVector = document.getElementById("btnModalExportVector");
+  const modalExportVectorStatus = document.getElementById("modalExportVectorStatus");
 
   // State
   let currentFolder = "foto";
@@ -118,6 +147,257 @@ document.addEventListener("DOMContentLoaded", () => {
   let isExecuting = false;
   let currentModalData = null;
   let isConsoleCollapsed = false;
+
+  // Vector Settings State & Profiles
+  const DEFAULT_VECTOR_SETTINGS = {
+    profile: "microstock",
+    mode: "spline",
+    hierarchical: "cutout",
+    simplify: 1.5,
+    cornerThreshold: 60,
+    filterSpeckle: 8,
+    colorPrecision: 6,
+    maxColors: 32,
+    embedMetadata: true,
+    outDir: "",
+  };
+
+  const VECTOR_PROFILES_DATA = {
+    microstock: {
+      name: "Microstock Clean",
+      desc: "Kurva rapi, potongan cutout (tanpa layer bertumpuk), minim node, standar kurasi microstock.",
+      mode: "spline",
+      hierarchical: "cutout",
+      simplify: 1.5,
+      cornerThreshold: 60,
+      filterSpeckle: 8,
+      colorPrecision: 6,
+      maxColors: 32,
+    },
+    flat: {
+      name: "Flat Clipart & Logo",
+      desc: "Warna datar sederhana, kurva halus, cocok untuk logo dan ikon.",
+      mode: "spline",
+      hierarchical: "stacked",
+      simplify: 2.0,
+      cornerThreshold: 60,
+      filterSpeckle: 12,
+      colorPrecision: 4,
+      maxColors: 16,
+    },
+    pixel: {
+      name: "Pixel Art to Vector",
+      desc: "Menjaga kotak-kotak piksel 1:1 tetap tajam tanpa kurva membulat.",
+      mode: "pixel",
+      hierarchical: "cutout",
+      simplify: 0,
+      cornerThreshold: 90,
+      filterSpeckle: 0,
+      colorPrecision: 8,
+      maxColors: 0,
+    },
+    photo: {
+      name: "Detailed Photo Trace",
+      desc: "Gradasi warna kaya dan kontur halus mendekati foto asli.",
+      mode: "spline",
+      hierarchical: "stacked",
+      simplify: 0.8,
+      cornerThreshold: 45,
+      filterSpeckle: 2,
+      colorPrecision: 7,
+      maxColors: 0,
+    },
+    bw: {
+      name: "Black & White (Siluet)",
+      desc: "Dua warna monokrom kontras tinggi untuk siluet, stempel, atau logo cap.",
+      mode: "spline",
+      hierarchical: "stacked",
+      simplify: 1.2,
+      cornerThreshold: 60,
+      filterSpeckle: 4,
+      colorPrecision: 2,
+      maxColors: 2,
+    },
+    custom: {
+      name: "Kustom",
+      desc: "Parameter kurva dan warna ditentukan manual oleh pengguna.",
+    },
+  };
+
+  let currentVectorSettings = { ...DEFAULT_VECTOR_SETTINGS };
+
+  try {
+    const saved = localStorage.getItem("imgmeta_vector_settings");
+    if (saved) {
+      currentVectorSettings = { ...DEFAULT_VECTOR_SETTINGS, ...JSON.parse(saved) };
+    }
+  } catch {}
+
+  function updateVectorSummaryBadge() {
+    if (!vectorSettingsSummaryBadge) return;
+    const s = currentVectorSettings;
+    const pInfo = VECTOR_PROFILES_DATA[s.profile] || { name: "Kustom" };
+    vectorSettingsSummaryBadge.textContent = `${pInfo.name} • ${s.hierarchical === "cutout" ? "Cutout" : "Stacked"} • ${s.mode} • Node: ${s.simplify}px • Noise: ${s.filterSpeckle}px • Warna: ${s.maxColors ? s.maxColors : "Auto"}`;
+    if (vectorProfileSelect) {
+      vectorProfileSelect.value = s.profile || "custom";
+    }
+  }
+
+  function syncSettingsToForm(s) {
+    if (!cfgVectorProfile) return;
+    cfgVectorProfile.value = s.profile || "custom";
+    if (cfgProfileDesc && VECTOR_PROFILES_DATA[s.profile]) {
+      cfgProfileDesc.textContent = VECTOR_PROFILES_DATA[s.profile].desc;
+    }
+    if (cfgVectorMode) cfgVectorMode.value = s.mode || "spline";
+    if (cfgVectorHierarchical) cfgVectorHierarchical.value = s.hierarchical || "cutout";
+    if (cfgVectorSimplify) {
+      cfgVectorSimplify.value = s.simplify !== undefined ? s.simplify : 1.5;
+      if (cfgVectorSimplifyBadge) cfgVectorSimplifyBadge.textContent = `${cfgVectorSimplify.value} px`;
+    }
+    if (cfgVectorCorner) {
+      cfgVectorCorner.value = s.cornerThreshold !== undefined ? s.cornerThreshold : 60;
+      if (cfgVectorCornerBadge) cfgVectorCornerBadge.textContent = `${cfgVectorCorner.value}°`;
+    }
+    if (cfgVectorSpeckle) {
+      cfgVectorSpeckle.value = s.filterSpeckle !== undefined ? s.filterSpeckle : 8;
+      if (cfgVectorSpeckleBadge) cfgVectorSpeckleBadge.textContent = `${cfgVectorSpeckle.value} px`;
+    }
+    if (cfgVectorPrecision) {
+      cfgVectorPrecision.value = s.colorPrecision !== undefined ? s.colorPrecision : 6;
+      if (cfgVectorPrecisionBadge) cfgVectorPrecisionBadge.textContent = String(cfgVectorPrecision.value);
+    }
+    if (cfgVectorMaxColors) cfgVectorMaxColors.value = s.maxColors !== undefined ? String(s.maxColors) : "32";
+    if (cfgVectorEmbedMeta) cfgVectorEmbedMeta.checked = s.embedMetadata !== false;
+    if (cfgVectorOutDir) cfgVectorOutDir.value = s.outDir || "";
+  }
+
+  function applyProfileToForm(profileKey) {
+    const prof = VECTOR_PROFILES_DATA[profileKey];
+    if (!prof || profileKey === "custom") {
+      if (cfgProfileDesc) cfgProfileDesc.textContent = "Parameter kurva dan warna ditentukan manual oleh pengguna.";
+      return;
+    }
+    if (cfgProfileDesc) cfgProfileDesc.textContent = prof.desc;
+    if (cfgVectorMode && prof.mode) cfgVectorMode.value = prof.mode;
+    if (cfgVectorHierarchical && prof.hierarchical) cfgVectorHierarchical.value = prof.hierarchical;
+    if (cfgVectorSimplify && prof.simplify !== undefined) {
+      cfgVectorSimplify.value = prof.simplify;
+      if (cfgVectorSimplifyBadge) cfgVectorSimplifyBadge.textContent = `${prof.simplify} px`;
+    }
+    if (cfgVectorCorner && prof.cornerThreshold !== undefined) {
+      cfgVectorCorner.value = prof.cornerThreshold;
+      if (cfgVectorCornerBadge) cfgVectorCornerBadge.textContent = `${prof.cornerThreshold}°`;
+    }
+    if (cfgVectorSpeckle && prof.filterSpeckle !== undefined) {
+      cfgVectorSpeckle.value = prof.filterSpeckle;
+      if (cfgVectorSpeckleBadge) cfgVectorSpeckleBadge.textContent = `${prof.filterSpeckle} px`;
+    }
+    if (cfgVectorPrecision && prof.colorPrecision !== undefined) {
+      cfgVectorPrecision.value = prof.colorPrecision;
+      if (cfgVectorPrecisionBadge) cfgVectorPrecisionBadge.textContent = String(prof.colorPrecision);
+    }
+    if (cfgVectorMaxColors && prof.maxColors !== undefined) cfgVectorMaxColors.value = String(prof.maxColors);
+  }
+
+  function readFormToSettings() {
+    return {
+      profile: cfgVectorProfile.value,
+      mode: cfgVectorMode.value,
+      hierarchical: cfgVectorHierarchical.value,
+      simplify: parseFloat(cfgVectorSimplify.value) || 0,
+      cornerThreshold: parseInt(cfgVectorCorner.value, 10) || 60,
+      filterSpeckle: parseInt(cfgVectorSpeckle.value, 10) || 0,
+      colorPrecision: parseInt(cfgVectorPrecision.value, 10) || 6,
+      maxColors: parseInt(cfgVectorMaxColors.value, 10) || 0,
+      embedMetadata: cfgVectorEmbedMeta.checked,
+      outDir: cfgVectorOutDir.value.trim(),
+    };
+  }
+
+  // Vector Settings Listeners
+  if (btnOpenVectorSettings) {
+    btnOpenVectorSettings.addEventListener("click", () => {
+      syncSettingsToForm(currentVectorSettings);
+      vectorSettingsModal.style.display = "flex";
+    });
+  }
+
+  if (btnVectorSettingsClose) {
+    btnVectorSettingsClose.addEventListener("click", () => {
+      vectorSettingsModal.style.display = "none";
+    });
+  }
+
+  if (cfgVectorProfile) {
+    cfgVectorProfile.addEventListener("change", (e) => {
+      applyProfileToForm(e.target.value);
+    });
+  }
+
+  [cfgVectorMode, cfgVectorHierarchical, cfgVectorSimplify, cfgVectorCorner, cfgVectorSpeckle, cfgVectorPrecision, cfgVectorMaxColors].forEach((input) => {
+    if (!input) return;
+    input.addEventListener("input", () => {
+      if (cfgVectorSimplifyBadge && input === cfgVectorSimplify) cfgVectorSimplifyBadge.textContent = `${input.value} px`;
+      if (cfgVectorCornerBadge && input === cfgVectorCorner) cfgVectorCornerBadge.textContent = `${input.value}°`;
+      if (cfgVectorSpeckleBadge && input === cfgVectorSpeckle) cfgVectorSpeckleBadge.textContent = `${input.value} px`;
+      if (cfgVectorPrecisionBadge && input === cfgVectorPrecision) cfgVectorPrecisionBadge.textContent = input.value;
+      if (cfgVectorProfile && cfgVectorProfile.value !== "custom") {
+        cfgVectorProfile.value = "custom";
+        if (cfgProfileDesc) cfgProfileDesc.textContent = "Parameter diubah manual.";
+      }
+    });
+  });
+
+  if (btnVectorResetDefaults) {
+    btnVectorResetDefaults.addEventListener("click", () => {
+      currentVectorSettings = { ...DEFAULT_VECTOR_SETTINGS };
+      syncSettingsToForm(currentVectorSettings);
+      log("[VECTOR] Pengaturan vektor di-reset ke default Microstock Clean.", "info");
+    });
+  }
+
+  if (btnVectorSaveSettings) {
+    btnVectorSaveSettings.addEventListener("click", () => {
+      currentVectorSettings = readFormToSettings();
+      try {
+        localStorage.setItem("imgmeta_vector_settings", JSON.stringify(currentVectorSettings));
+      } catch {}
+      updateVectorSummaryBadge();
+      vectorSettingsModal.style.display = "none";
+      showCopyToast("✓ Pengaturan vektor berhasil disimpan!");
+      log(`[VECTOR] Pengaturan vektor diperbarui (Profil: ${currentVectorSettings.profile}).`, "ok");
+    });
+  }
+
+  if (vectorProfileSelect) {
+    vectorProfileSelect.addEventListener("change", (e) => {
+      const selected = e.target.value;
+      if (selected === "custom") {
+        if (btnOpenVectorSettings) btnOpenVectorSettings.click();
+      } else {
+        const prof = VECTOR_PROFILES_DATA[selected];
+        if (prof) {
+          currentVectorSettings = {
+            ...currentVectorSettings,
+            profile: selected,
+            mode: prof.mode,
+            hierarchical: prof.hierarchical,
+            simplify: prof.simplify,
+            cornerThreshold: prof.cornerThreshold,
+            filterSpeckle: prof.filterSpeckle,
+            colorPrecision: prof.colorPrecision,
+            maxColors: prof.maxColors,
+          };
+          try {
+            localStorage.setItem("imgmeta_vector_settings", JSON.stringify(currentVectorSettings));
+          } catch {}
+          updateVectorSummaryBadge();
+          log(`[VECTOR] Mengaktifkan profil vektor: ${prof.name}`, "info");
+        }
+      }
+    });
+  }
 
   // Logger helper
   function log(msg, type = "info") {
@@ -778,6 +1058,19 @@ document.addEventListener("DOMContentLoaded", () => {
         modalExportQuality.value = exportQualitySlider.value || "90";
       }
 
+      if (modalExportVectorStatus) {
+        modalExportVectorStatus.style.display = "none";
+        modalExportVectorStatus.className = "modal-export-status";
+        modalExportVectorStatus.textContent = "";
+      }
+      if (btnModalExportVector) {
+        btnModalExportVector.disabled = false;
+        btnModalExportVector.textContent = "📐 EXPORT FOTO INI KE VEKTOR SVG";
+      }
+      if (modalVectorPreset && vectorPresetSelect) {
+        modalVectorPreset.value = vectorPresetSelect.value || "poster";
+      }
+
       const res = await fetch(`/api/meta-detail?file=${encodeURIComponent(filePath)}`);
       const data = await res.json();
       if (!data.success) {
@@ -802,8 +1095,8 @@ document.addEventListener("DOMContentLoaded", () => {
     modalFileName.textContent = file.name || "-";
     modalDims.textContent = file.dims || "-";
     modalSize.textContent = file.sizeFmt || "-";
-    modalFormat.textContent = file.isJpeg ? "JPEG (.jpg)" : file.isPng ? "PNG (.png)" : "Gambar";
-    modalExifStatus.textContent = file.exifPresent ? "TERSEDIA (EXIF)" : "TIDAK ADA EXIF";
+    modalFormat.textContent = file.isJpeg ? "JPEG (.jpg)" : file.isPng ? "PNG (.png)" : file.isSvg ? "SVG (.svg)" : "Gambar";
+    modalExifStatus.textContent = file.exifPresent ? "TERSEDIA (EXIF)" : file.isSvg ? "XML METADATA" : "TIDAK ADA EXIF";
 
     // Target Rename
     if (modalTargetRenameBox) {
@@ -1023,6 +1316,89 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Single Image Vector Export from Modal Detail Handler
+  if (btnModalExportVector) {
+    btnModalExportVector.addEventListener("click", async () => {
+      if (!currentModalData || !currentModalData.file || !currentModalData.file.fullPath) return;
+
+      const filePath = currentModalData.file.fullPath;
+      const fileName = currentModalData.file.name || "Foto";
+      const chosenProfile = modalVectorPreset ? modalVectorPreset.value : (currentVectorSettings.profile || "microstock");
+      const baseProf = VECTOR_PROFILES_DATA[chosenProfile] || currentVectorSettings;
+
+      btnModalExportVector.disabled = true;
+      btnModalExportVector.textContent = "⏳ MENGEKSPOR KE SVG...";
+      if (modalExportVectorStatus) {
+        modalExportVectorStatus.style.display = "block";
+        modalExportVectorStatus.className = "modal-export-status status-loading";
+        modalExportVectorStatus.textContent = `Sedang mengonversi ${fileName} ke Vektor SVG (${chosenProfile})...`;
+      }
+
+      log(`[VECTOR] Mengekspor foto individual: ${fileName} ke Vektor SVG (Profil: ${chosenProfile})...`, "info");
+
+      try {
+        const payload = {
+          folder: currentFolder,
+          preset: currentPreset,
+          files: [filePath],
+          singleTitle: titleToUse,
+          singleKeywords: keywordsToUse,
+          profile: chosenProfile,
+          mode: baseProf.mode || currentVectorSettings.mode,
+          hierarchical: baseProf.hierarchical || currentVectorSettings.hierarchical,
+          simplify: baseProf.simplify !== undefined ? baseProf.simplify : currentVectorSettings.simplify,
+          cornerThreshold: baseProf.cornerThreshold !== undefined ? baseProf.cornerThreshold : currentVectorSettings.cornerThreshold,
+          filterSpeckle: baseProf.filterSpeckle !== undefined ? baseProf.filterSpeckle : currentVectorSettings.filterSpeckle,
+          colorPrecision: baseProf.colorPrecision !== undefined ? baseProf.colorPrecision : currentVectorSettings.colorPrecision,
+          maxColors: baseProf.maxColors !== undefined ? baseProf.maxColors : currentVectorSettings.maxColors,
+          embedMetadata: currentVectorSettings.embedMetadata,
+          outDir: currentVectorSettings.outDir,
+        };
+
+        const res = await fetch("/api/export-vector", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (!data.success || data.failed > 0) {
+          const errMsg = data.error || (data.logs && data.logs.find((l) => l.startsWith("[ERROR]"))) || "Gagal melakukan ekspor vektor";
+          if (modalExportVectorStatus) {
+            modalExportVectorStatus.className = "modal-export-status status-err";
+            modalExportVectorStatus.textContent = `Gagal: ${errMsg}`;
+          }
+          log(`[ERROR] Ekspor vektor ${fileName} gagal: ${errMsg}`, "err");
+        } else {
+          const outResult = (data.results && data.results[0]) || {};
+          const destName = outResult.destName || (fileName.replace(/\.[^.]+$/, "") + ".svg");
+          const sizeFmt = outResult.sizeFmt || "";
+
+          if (modalExportVectorStatus) {
+            modalExportVectorStatus.className = "modal-export-status status-ok";
+            modalExportVectorStatus.innerHTML = `✓ Berhasil diekspor: <strong>${destName}</strong> ${sizeFmt ? `(${sizeFmt})` : ""}`;
+          }
+          log(`[OK] Vektor berhasil diekspor: ${destName} ${sizeFmt ? `(${sizeFmt})` : ""}`, "ok");
+          showCopyToast(`✓ Berhasil diekspor ke ${destName}`);
+
+          await fetchLivePreview();
+          if (tabHistory.classList.contains("active")) {
+            loadHistory();
+          }
+        }
+      } catch (err) {
+        if (modalExportVectorStatus) {
+          modalExportVectorStatus.className = "modal-export-status status-err";
+          modalExportVectorStatus.textContent = `Kesalahan: ${err.message}`;
+        }
+        log(`[ERROR] Ekspor vektor ${fileName} error: ${err.message}`, "err");
+      } finally {
+        btnModalExportVector.disabled = false;
+        btnModalExportVector.textContent = "📐 EXPORT FOTO INI KE VEKTOR SVG";
+      }
+    });
+  }
+
   // Save / Load Handlers for Text Tabs
   btnSaveTitles.addEventListener("click", async () => {
     try {
@@ -1220,9 +1596,75 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  async function executeExportVector() {
+    if (isExecuting) return;
+
+    const s = currentVectorSettings;
+    const pInfo = VECTOR_PROFILES_DATA[s.profile] || { name: "Kustom" };
+    const confirmMsg = `Konfirmasi: Konversi seluruh gambar di folder '${currentFolder}' ke Vektor SVG (Profil: ${pInfo.name}, Stacking: ${s.hierarchical}, Node: ${s.simplify}px) dengan menyematkan metadata Dublin Core dari preset '${currentPreset}'?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    isExecuting = true;
+    setExecutionState(true);
+    log(`Memulai konversi Vektor SVG (Profil: ${pInfo.name}, Mode: ${s.mode}, Stacking: ${s.hierarchical}, Node: ${s.simplify}px)...`, "info");
+
+    try {
+      const payload = {
+        folder: currentFolder,
+        preset: currentPreset,
+        titleText: titleInput.value,
+        keywordText: keywordInput.value,
+        profile: s.profile,
+        mode: s.mode,
+        hierarchical: s.hierarchical,
+        simplify: s.simplify,
+        cornerThreshold: s.cornerThreshold,
+        filterSpeckle: s.filterSpeckle,
+        colorPrecision: s.colorPrecision,
+        maxColors: s.maxColors,
+        embedMetadata: s.embedMetadata,
+        outDir: s.outDir,
+      };
+
+      const res = await fetch("/api/export-vector", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        log("Export Vektor gagal: " + (data.error || "Terjadi kesalahan"), "err");
+      } else {
+        if (data.logs && data.logs.length) {
+          data.logs.forEach((line) => {
+            const isOk = line.startsWith("[OK]");
+            const isErr = line.startsWith("[ERROR]");
+            log(line, isOk ? "ok" : isErr ? "err" : "info");
+          });
+        }
+        log(
+          `Export Vektor Selesai: ${data.processed} berhasil diekspor, ${data.failed} gagal.`,
+          data.failed > 0 ? "err" : "ok"
+        );
+      }
+
+      await fetchLivePreview();
+      if (tabHistory.classList.contains("active")) {
+        loadHistory();
+      }
+    } catch (err) {
+      log("Kesalahan saat ekspor vektor: " + err.message, "err");
+    } finally {
+      isExecuting = false;
+      setExecutionState(false);
+    }
+  }
+
   function setExecutionState(running) {
     btnExecuteAuto.disabled = running;
     if (btnExecuteExportJpeg) btnExecuteExportJpeg.disabled = running;
+    if (btnExecuteExportVector) btnExecuteExportVector.disabled = running;
     btnExecuteMeta.disabled = running;
     btnExecuteRename.disabled = running;
     btnExecuteStrip.disabled = running;
@@ -1231,10 +1673,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   btnExecuteAuto.addEventListener("click", () => executeAction("auto"));
   if (btnExecuteExportJpeg) btnExecuteExportJpeg.addEventListener("click", executeExportJpeg);
+  if (btnExecuteExportVector) btnExecuteExportVector.addEventListener("click", executeExportVector);
   btnExecuteMeta.addEventListener("click", () => executeAction("metadata"));
   btnExecuteRename.addEventListener("click", () => executeAction("rename"));
   btnExecuteStrip.addEventListener("click", () => executeAction("strip"));
 
   // Initial Load
+  updateVectorSummaryBadge();
   fetchFolders();
 });

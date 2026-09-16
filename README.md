@@ -1,6 +1,6 @@
-# imgmeta v1.1.0 — Metadata Engine & Batch Rename (SQLite Powered)
+# imgmeta v1.2.0-dev — Metadata Engine, Vector SVG Converter & Batch Rename (SQLite Powered)
 
-CLI & Web Engine untuk **membaca & mengubah metadata foto (EXIF, IPTC & XMP)**, **mengonversi PNG/gambar ke JPEG standar microstock**, **menyimpan data preset judul & kata kunci di database SQLite (`node:sqlite` bawaan)**, dan **mengganti nama file secara batch** menggunakan template. Dibangun dengan **Node.js murni tanpa dependensi eksternal**.
+CLI & Web Engine untuk **membaca & mengubah metadata foto (EXIF, IPTC & XMP)**, **mengonversi PNG/gambar ke JPEG standar microstock**, **mentracing gambar raster ke vektor SVG berkualitas tinggi (`@visioncortex/vtracer`)**, **membaca metadata berkas vektor SVG**, **menyimpan data preset judul & kata kunci di database SQLite (`node:sqlite` bawaan)**, dan **mengganti nama file secara batch** menggunakan template.
 
 > 💡 **Dokumentasi Lengkap di Folder `docs/`**:
 > - [Panduan Struktur Folder](file:///d:/METADATA/docs/STRUKTUR_FOLDER.md) — Penjelasan detail arsitektur berkas & direktori.
@@ -11,10 +11,12 @@ CLI & Web Engine untuk **membaca & mengubah metadata foto (EXIF, IPTC & XMP)**, 
 
 ## Fitur Utama
 
+- 📐 **Engine Tracing & Ekspor Vektor SVG (`src/vector.js`)**: Konversi otomatis berkas raster (PNG/JPEG) menjadi vektor SVG berkualitas tinggi berbasis WebAssembly `@visioncortex/vtracer`. Dilengkapi profil preset kurasi microstock (`microstock`, `flat`, `pixel`, `photo`, `bw`), struktur layer `cutout` (bebas tumpukan kurva ganda), kontrol simplifikasi node (anchor points), filter speckle, dan penyematan metadata Dublin Core RDF (`<dc:title>`, `<dc:description>`, `<dc:creator>`, `<dc:subject>`).
+- 🔍 **Pembaca Metadata SVG Zero-Dependency (`src/svg.js`)**: Parser XML SVG murni Node.js untuk membaca dimensi fisik (`width`, `height`, `viewBox`), software generator, serta tag metadata `<title>`, `<desc>`, dan Dublin Core dari berkas `.svg` melalui CLI `read` dan Web UI.
 - 🖼️ **Engine Export JPEG Native (`src/image.js`)**: Decoder PNG murni & Encoder JPEG baseline berkecepatan tinggi (**Fast AAN FDCT 8x8**) untuk konversi masal gambar PNG ke JPEG JFIF beresolusi tinggi (hingga 16MP+) lengkap dengan injeksi metadata EXIF, IPTC, dan Adobe XMP Dublin Core.
 - 💾 **Database SQLite Bawaan (`src/db.js`)**: Menggunakan modul standar `node:sqlite` (`DatabaseSync` Node.js >= 22) untuk menyimpan preset judul & kata kunci, riwayat eksekusi batch, dan template rename di `imgmeta.db`.
-- 🌐 **Web UI Interaktif (Industrial Minimalism)**: Antarmuka grafis browser yang bersih dan responsif sesuai spesifikasi [DESIGN.md](file:///d:/METADATA/DESIGN.md). Dilengkapi **Grid SQLite Editor**, tombol 1-klik **Export ke JPEG**, pemilih subfolder, live preview tabel/grid kartu gambar, dan eksekusi batch.
-- 🚀 **100% Tanpa Dependensi Eksternal**: Seluruh parser & serializer (JPEG, PNG, TIFF/EXIF, IPTC IIM 8BIM, Adobe XMP Dublin Core), SQLite engine, Image converter, dan HTTP server Web UI ditulis murni tanpa pustaka pihak ketiga.
+- 🌐 **Web UI Interaktif (Industrial Minimalism)**: Antarmuka grafis browser yang bersih dan responsif sesuai spesifikasi [DESIGN.md](file:///d:/METADATA/DESIGN.md). Dilengkapi **Grid SQLite Editor**, modal **Pengaturan Parameter Vektor** (slider simplifikasi, speckle, warna, layer cutout/stacked), tombol 1-klik **Export ke JPEG** & **Export ke Vektor SVG**, pemilih subfolder, live preview tabel/grid kartu gambar, dan eksekusi batch.
+- 🚀 **Zero-Dependency Core Parser**: Seluruh parser & serializer biner (JPEG, PNG, TIFF/EXIF, IPTC IIM 8BIM, Adobe XMP Dublin Core, SVG XML reader), SQLite engine, Image converter, dan HTTP server Web UI ditulis murni tanpa pustaka pihak ketiga.
 - 📷 **Metadata EXIF, IPTC & XMP Lengkap (Microstock Compliant)**:
   - Kompatibel penuh dengan standar Adobe Stock, Shutterstock, & Freepik (`<dc:subject>`, `<dc:title>`, IPTC Dataset 2:05/2:25/2:120/2:80, EXIF IFD0 `XPKeywords`/`XPTitle`/`ImageDescription`).
 - ⚡ **Proses Otomatis (`auto` / `npm start`)**: Sekali perintah untuk menerapkan metadata dari database SQLite (atau file daftar) sekaligus mengganti nama file foto di folder `foto/` sesuai judulnya.
@@ -23,7 +25,7 @@ CLI & Web Engine untuk **membaca & mengubah metadata foto (EXIF, IPTC & XMP)**, 
 - 🔒 **Sanitasi & Two-Pass Batch Rename**: Pembersihan otomatis karakter ilegal Windows/Linux, strategi *Two-Pass Rename* untuk mencegah bentrok palsu dengan nama file lama saat generate ulang.
 - 🛡️ **Pembersihan Metadata Privasi (`strip`)**: Menghapus seluruh metadata sensitif (EXIF, IPTC, XMP) dari foto.
 - 📋 **Log Kegagalan & Riwayat Batch**: Setiap kegagalan operasi dicatat ke **`imgmeta.log`** dan tersimpan di riwayat database SQLite.
-- 🧪 **Pengujian Internal Terintegrasi (`selftest`)**: Rangkaian 78 pengujian mandiri (*round-trip* EXIF, IPTC, XMP, PNG, JPEG encoder/decoder, template rename, & SQLite).
+- 🧪 **Pengujian Internal Terintegrasi (`selftest`)**: Rangkaian 105 pengujian mandiri (*round-trip* EXIF, IPTC, XMP, PNG, JPEG encoder/decoder, VTracer SVG converter, SVG metadata reader, template rename, & SQLite).
 
 ---
 
@@ -123,26 +125,49 @@ node index.js export-jpeg "foto/*.png" --preset default
 node index.js export-jpeg "foto/*.png" --quality 95 --preset default --out-dir output_jpeg
 ```
 
-### 5. Baca Metadata (`read`)
+### 5. Tracing & Export ke Vektor SVG (`export-vector`)
+
+Mengonversi file gambar raster (PNG / JPEG) menjadi vektor SVG berkualitas tinggi berbasis WebAssembly `@visioncortex/vtracer` dengan berbagai profil kurasi microstock serta penyematan metadata Dublin Core / Adobe XMP secara otomatis:
+
+```bash
+# Export seluruh PNG di folder foto/ ke SVG dengan profil standar microstock:
+node index.js export-vector "foto/*.png" --profile microstock --preset default
+
+# Export dengan parameter presisi kustom (simplifikasi kurva, batas warna, struktur layer cutout):
+node index.js export-vector "foto/*.png" --profile microstock --simplify 1.5 --max-colors 32 --hierarchical cutout --out-dir output_svg
+
+# Pilihan profil yang tersedia:
+# --profile microstock  : Rekomendasi Adobe Stock / Shutterstock (spline, cutout, simplify 1.5, max 32 warna)
+# --profile flat        : Ilustrasi datar / clipart kontras tinggi (spline, stacked, max 16 warna)
+# --profile pixel       : Vektorisasi pixel art 1:1 tanpa kurva membulat (pixel, cutout)
+# --profile photo       : Tracing detail tinggi mendekati foto asli (spline, presisi warna tinggi)
+# --profile bw          : Monokrom 2 warna untuk stensil, logo, dan siluet
+```
+
+### 6. Baca Metadata Foto & Vektor (`read`)
+
+Mendukung pembacaan metadata foto JPEG, PNG, maupun berkas vektor SVG:
 
 ```bash
 node index.js read "foto/*.jpg"
-node index.js read foto.png --json
+node index.js read "foto/*.png"
+node index.js read "foto/*.svg"
+node index.js read berkas.svg --json
 ```
 
-### 5. Edit Metadata Manual (`edit`)
+### 7. Edit Metadata Manual (`edit`)
 
 ```bash
 node index.js edit foto.jpg --date "2020-01-15 08:30:00" --artist "Budi" --title "Judul Foto" --keywords "bali, pantai"
 ```
 
-### 6. Hapus Metadata Privasi (`strip`)
+### 8. Hapus Metadata Privasi (`strip`)
 
 ```bash
 node index.js strip foto.jpg [--no-backup]
 ```
 
-### 7. Rename Batch dengan Template (`rename`)
+### 9. Rename Batch dengan Template (`rename`)
 
 ```bash
 # Preview simulasi (dry-run):
@@ -152,16 +177,16 @@ node index.js rename "foto/*.jpg" --template "{date:YYYYMMDD}_{seq:3}"
 node index.js rename "foto/*.jpg" --template "{title}" [--preset default] --apply
 ```
 
-### 9. Pengujian Internal (`selftest`)
+### 10. Pengujian Internal (`selftest`)
 
 ```bash
 npm run selftest
 # atau: node index.js selftest
 ```
 
-Menjalankan 78 pengujian round-trip EXIF, IPTC, XMP, PNG, JPEG decoding & Fast AAN FDCT encoding, template rename, penanganan bentrok nama, dan operasi database SQLite.
+Menjalankan 105 pengujian round-trip EXIF, IPTC, XMP, PNG, JPEG decoding & Fast AAN FDCT encoding, konversi vektor VTracer, pembacaan metadata SVG, template rename, penanganan bentrok nama, dan operasi database SQLite.
 
-### 10. Log Kegagalan (`imgmeta.log`)
+### 11. Log Kegagalan (`imgmeta.log`)
 
 Setiap kegagalan operasi dicatat secara otomatis ke **`imgmeta.log`** di folder tempat perintah dijalankan (mode *append* — riwayat kegagalan sebelumnya tidak ditimpa):
 
@@ -182,7 +207,7 @@ METADATA/
 ├── imgmeta.cmd               # Peluncur cepat untuk lingkungan Windows CMD / PowerShell
 ├── imgmeta.db                # Database SQLite lokal (presets, items, history, templates)
 ├── imgmeta.log               # Log kegagalan operasi batch
-├── package.json              # Konfigurasi npm package (v1.0.0, ESM murni, zero-dependency)
+├── package.json              # Konfigurasi npm package (v1.2.0-dev, ESM murni)
 ├── README.md                 # Panduan umum pemakaian CLI & Web UI
 ├── AGENTS.md                 # Panduan aturan baku untuk AI Agent / Developer
 ├── docs/                     # Dokumentasi teknis & arsitektur
@@ -191,24 +216,26 @@ METADATA/
 │   └── CHANGELOG.md          # Riwayat perubahan dan rilis versi
 ├── foto/                     # Folder kerja foto: tempat meletakkan file gambar
 ├── src/                      # Modul inti backend & parser metadata (ESM murni)
-│   ├── cli.js                # Parser argumen CLI & handler perintah
+│   ├── cli.js                # Parser argumen CLI & handler perintah (auto, export-vector, export-jpeg, dll.)
 │   ├── db.js                 # Modul SQLite bawaan Node.js (node:sqlite)
 │   ├── server.js             # HTTP server murni Node.js (REST API & static server)
+│   ├── vector.js             # Engine tracing raster-to-vector SVG (@visioncortex/vtracer WASM)
+│   ├── svg.js                # Parser metadata berkas vektor SVG zero-dependency
 │   ├── image.js              # Engine konversi PNG->JPEG & Fast AAN FDCT encoder
 │   ├── jpeg.js               # Parser struktur segmen JPEG (APP1, APP13, XMP, SOF)
 │   ├── png.js                # Parser chunk PNG (eXIf, iTXt, IHDR, CRC32)
 │   ├── exif.js               # Parser & serializer TIFF/EXIF
 │   ├── iptc.js               # Parser & serializer IPTC IIM Photoshop 8BIM
-│   ├── meta.js               # Lapisan orkestrasi metadata (EXIF, IPTC, XMP)
+│   ├── meta.js               # Lapisan orkestrasi metadata (EXIF, IPTC, XMP, SVG)
 │   ├── rename.js             # Batch renamer & generator template nama
 │   ├── utils.js              # Utilitas warna ANSI, format byte, log failure
 │   └── tinyjpeg.js           # Encoder JPEG 8x8 sintetis untuk pengujian
 ├── public/                   # Frontend antarmuka Web UI (Industrial Minimalism)
 │   ├── index.html            # Markup HTML aplikasi Web UI
 │   ├── style.css             # Desain Industrial Minimalism
-│   └── app.js                # Logika frontend (SQLite Grid, Live Preview, Modal)
+│   └── app.js                # Logika frontend (SQLite Grid, Vector Settings, Live Preview, Modal)
 ├── test/                     # Pengujian internal & selftest
-│   └── selftest.js           # Test suite round-trip (78 pengujian)
+│   └── selftest.js           # Test suite round-trip (105 pengujian)
 └── graphify-out/             # Output visualisasi knowledge graph /graphify
 ```
 

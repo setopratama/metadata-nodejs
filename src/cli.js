@@ -6,13 +6,14 @@ import * as meta from "./meta.js";
 import * as renameMod from "./rename.js";
 import * as db from "./db.js";
 import * as imageMod from "./image.js";
+import * as vectorMod from "./vector.js";
 import { runSelftest } from "../test/selftest.js";
 import { startServer } from "./server.js";
 
 export const VERSION = "1.1.0";
 
 const BOOLEAN_OPTS = new Set([
-  "apply", "json", "touch", "no-backup", "remove-gps", "help", "version", "no-color", "no-open", "keep-png",
+  "apply", "json", "touch", "no-backup", "remove-gps", "help", "version", "no-color", "no-open", "keep-png", "no-metadata",
 ]);
 
 function parseArgs(argv) {
@@ -53,6 +54,7 @@ function usage() {
   utils.info("  web          Jalankan Web UI (antarmuka browser interaktif)");
   utils.info("  auto         Proses otomatis: terapkan metadata (SQLite/file) & rename file sesuai judul");
   utils.info("  export-jpeg  Konversi gambar (PNG/JPEG) ke JPEG dengan metadata EXIF, IPTC & XMP");
+  utils.info("  export-vector Konversi gambar (PNG/JPEG) ke Vektor SVG dengan metadata Dublin Core/XMP");
   utils.info("  read         Baca metadata foto (EXIF, IPTC & XMP)");
   utils.info("  edit         Ubah metadata (tanggal, GPS, artis, judul, tag, dll.)");
   utils.info("  apply        Terapkan judul & kata kunci (dari SQLite preset atau file daftar)");
@@ -99,6 +101,12 @@ function usage() {
   utils.info('  node index.js export-jpeg "foto/*.png" [--quality 90] [--preset default] [--out-dir out]');
   utils.info("  Mengonversi file PNG ke JPEG standar microstock, menyematkan EXIF, IPTC & Adobe XMP.");
   utils.info("");
+  utils.info(utils.cyan("export-vector:"));
+  utils.info('  node index.js export-vector "foto/*.png" [--profile microstock] [--mode spline] [--out-dir out]');
+  utils.info('  node index.js export-vector "foto/*.jpg" [--hierarchical cutout] [--simplify 1.5] [--max-colors 32]');
+  utils.info("  Mengonversi gambar raster ke vektor SVG (@visioncortex/vtracer) serta menyematkan metadata.");
+  utils.info("  Profil: microstock (default, rapi & minim node), flat (clipart/logo), pixel, photo, bw.");
+  utils.info("");
   utils.info(utils.cyan("Log kegagalan & Database:"));
   utils.info("  Database SQLite tersimpan di imgmeta.db (otomatis tanpa instalasi).");
   utils.info("  Setiap kegagalan dicatat ke imgmeta.log dan tersimpan di riwayat SQLite.");
@@ -129,13 +137,16 @@ function fmtGps(gps) {
 function printRead(file, r, view) {
   utils.info("");
   utils.info(utils.bold(file));
-  if (!r.isJpeg && !r.isPng) {
-    utils.warn("Format tidak didukung (metadata EXIF hanya didukung untuk JPEG dan PNG).");
+  if (!r.isJpeg && !r.isPng && !r.isSvg) {
+    utils.warn("Format tidak didukung (metadata hanya didukung untuk JPEG, PNG, dan SVG).");
     return;
   }
   if (r.exifError) utils.warn("Gagal membaca sebagian EXIF: " + r.exifError);
 
   const rows = [];
+  if (r.isSvg) {
+    rows.push(["Format", "SVG (Scalable Vector Graphics)"]);
+  }
   if (view) {
     const cam = [view.make, view.model].filter(Boolean).join(" ");
     rows.push(["Kamera", cam || "-"]);
@@ -157,7 +168,7 @@ function printRead(file, r, view) {
     rows.push(["Panjang fokus", view.focalLength ? exifFmtRational(view.focalLength) + " mm" : "-"]);
     rows.push(["GPS", fmtGps(view.gps)]);
   }
-  if (!r.exifPresent) rows.push(["EXIF", "(tidak ada)"]);
+  if (!r.exifPresent && !r.isSvg) rows.push(["EXIF", "(tidak ada)"]);
   const dims = view && view.width ? view.width + " x " + view.height : r.dims ? r.dims.w + " x " + r.dims.h : "-";
   rows.push(["Dimensi", dims]);
   rows.push(["Ukuran file", utils.fmtBytes(r.size)]);
@@ -173,11 +184,15 @@ function cmdRead(files, opts) {
   const jsonOut = [];
   for (const f of list) {
     const r = meta.readFileMeta(f);
-    const view = r.model || r.iptc || r.xmp || r.text ? meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text) : null;
+    const view = r.model || r.iptc || r.xmp || r.text || r.svgMeta
+      ? meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta)
+      : null;
     if (opts.json) {
       jsonOut.push({
         file: f,
         isJpeg: r.isJpeg,
+        isPng: r.isPng,
+        isSvg: r.isSvg,
         dims: r.dims,
         exifPresent: r.exifPresent,
         metadata: view,
@@ -299,7 +314,7 @@ export function sortFilesByTitles(files, titles) {
     let t = null;
     try {
       const r = meta.readFileMeta(f);
-      const view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text);
+      const view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta);
       t = view && view.title ? view.title.trim().toLowerCase() : null;
     } catch {}
     return { file: f, title: t };
@@ -684,6 +699,88 @@ function cmdExportJpeg(files, opts) {
   utils.info(utils.green(`Selesai: ${success} file berhasil diekspor ke JPEG${failed ? `, ${failed} gagal` : ""}.`));
 }
 
+// ---------- export-vector ----------
+function cmdExportVector(files, opts) {
+  if (!files.length) files = ["foto/*.png", "foto/*.jpg"];
+  const rawList = renameMod.expandFiles(files);
+  if (!rawList.length) throw new Error("Tidak ada file gambar yang ditemukan untuk diekspor ke vektor SVG.");
+
+  let titles = null;
+  let keywordGroups = null;
+  if (opts.titles) {
+    titles = parseTitles(readLines(opts.titles));
+  } else if (opts.preset && db.listPresets().some((p) => p.name === opts.preset)) {
+    const items = db.getPresetItems(opts.preset);
+    titles = items.map((it) => it.title).filter(Boolean);
+    keywordGroups = items.map((it) => it.keywords);
+  }
+
+  if (opts["keywords-file"]) {
+    keywordGroups = utils.parseKeywordGroups(readLines(opts["keywords-file"]));
+  }
+
+  const list = titles && titles.length ? sortFilesByTitles(rawList, titles) : rawList;
+  const profile = opts.profile || opts["trace-profile"] || (opts.preset && vectorMod.VECTOR_PROFILES[opts.preset.toLowerCase()] ? opts.preset : "microstock");
+  const tracePreset = opts["trace-preset"] || (opts.preset && ["poster", "photo", "bw", "clipart"].includes(opts.preset.toLowerCase()) ? opts.preset : undefined);
+  const traceMode = opts.mode || undefined;
+  const hierarchical = opts.hierarchical || undefined;
+  const outDir = opts["out-dir"] || null;
+
+  utils.info(utils.bold(`Memulai export ${list.length} file ke Vektor SVG (Profil: ${profile}${traceMode ? `, Mode: ${traceMode}` : ""})...`));
+  let success = 0;
+  let failed = 0;
+
+  list.forEach((filePath, i) => {
+    try {
+      const ext = path.extname(filePath);
+      const baseName = path.basename(filePath, ext);
+      const mappedTitle = titles && i < titles.length ? titles[i] : undefined;
+      const mappedKeywords = keywordGroups && i < keywordGroups.length ? keywordGroups[i] : undefined;
+
+      const targetDir = outDir ? path.resolve(outDir) : path.dirname(filePath);
+      const destName = (mappedTitle ? utils.sanitizeName(mappedTitle) : baseName) + ".svg";
+      const destPath = path.join(targetDir, destName);
+
+      const exportOpts = {
+        profile,
+        preset: tracePreset,
+        mode: traceMode,
+        hierarchical,
+        filterSpeckle: opts["filter-speckle"] !== undefined ? parseInt(opts["filter-speckle"], 10) : undefined,
+        colorPrecision: opts["color-precision"] !== undefined ? parseInt(opts["color-precision"], 10) : undefined,
+        maxColors: opts["max-colors"] !== undefined ? parseInt(opts["max-colors"], 10) : undefined,
+        simplify: opts.simplify !== undefined ? parseFloat(opts.simplify) : undefined,
+        cornerThreshold: opts["corner-threshold"] !== undefined ? parseInt(opts["corner-threshold"], 10) : undefined,
+        layerDifference: opts["layer-difference"] !== undefined ? parseInt(opts["layer-difference"], 10) : undefined,
+        embedMetadata: !opts["no-metadata"],
+        title: mappedTitle,
+        keywords: mappedKeywords,
+        caption: mappedTitle,
+        description: mappedTitle,
+      };
+
+      const res = vectorMod.exportFileToVector(filePath, destPath, exportOpts);
+      success++;
+      utils.info(`  ${utils.green("OK")} ${path.basename(filePath)} -> ${path.basename(destPath)} (${utils.fmtBytes(res.size)}, ${res.timeMs}ms)`);
+    } catch (err) {
+      failed++;
+      utils.err(`  ${filePath}: gagal export vektor (${err.message})`);
+      utils.logFailure("export_vector", filePath, err.message);
+    }
+  });
+
+  db.recordHistory({
+    operation: "export_vector",
+    fileCount: list.length,
+    successCount: success,
+    failCount: failed,
+    logText: `Export Vektor SVG: ${success} berhasil, ${failed} gagal. Profil: ${profile}`,
+  });
+
+  utils.info("");
+  utils.info(utils.green(`Selesai: ${success} file berhasil diekspor ke Vektor SVG${failed ? `, ${failed} gagal` : ""}.`));
+}
+
 // ---------- ringkasan log kegagalan ----------
 /** Tampilkan ringkasan kegagalan sesi berjalan di akhir perintah. */
 function printFailureSummary(opts = {}) {
@@ -746,6 +843,12 @@ export function run(argv) {
       case "jpeg":
       case "export":
         cmdExportJpeg(files, opts);
+        break;
+      case "export-vector":
+      case "vector":
+      case "vectorize":
+      case "svg":
+        cmdExportVector(files, opts);
         break;
       case "selftest":
         return runSelftest();

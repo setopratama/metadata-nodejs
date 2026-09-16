@@ -8,6 +8,42 @@ Jenis perubahan: **Ditambahkan** (Added), **Diubah** (Changed), **Dihapus** (Rem
 
 Versi mengikuti `package.json` / `VERSION` di `src/cli.js` (saat ini **v1.1.0**).
 
+## [1.2.0-dev] - 2026-09-16 (Branch: `feat/vector-export`)
+
+Rilis Fitur Ekspor Vektor SVG & Panel Pengaturan Parameter — **Engine Tracing Raster ke Vektor (`src/vector.js`)** menggunakan library WebAssembly `@visioncortex/vtracer`, profil preset siap pakai (Microstock Clean, Flat Clipart, Pixel Art, Photo Trace, B&W), penyematan metadata Dublin Core / Adobe XMP, modal pengaturan teknis di Web UI, dan perintah CLI `export-vector`.
+
+### Ditambahkan
+- **Modul Engine Vektor SVG Lengkap (`src/vector.js`)**:
+  - Mengintegrasikan `@visioncortex/vtracer` berbasis WebAssembly dengan kamus profil bawaan `VECTOR_PROFILES`:
+    - `microstock`: Profil standar kurasi (mode `spline`, struktur layer `cutout` tanpa tumpukan ganda, simplifikasi node `1.5`, speckle `8`, maks warna `32`).
+    - `flat`: Ilustrasi datar kontras tinggi (mode `spline`, `stacked`, speckle `12`, warna `16`).
+    - `pixel`: Vektorisasi pixel art 1:1 tanpa kurva membulat (mode `pixel`, `cutout`, speckle `0`, simplifikasi `0`).
+    - `photo`: Tracing detail tinggi mendekati foto asli (mode `spline`, presisi warna `7`, speckle `2`).
+    - `bw`: Dua warna monokrom untuk cap dan siluet (mode `spline`, warna `2`).
+  - Parameter kurva presisi: `mode` (`spline`/`polygon`/`pixel`), `hierarchical` (`cutout`/`stacked`), `simplify` (toleransi anchor points 0–3px), `cornerThreshold`, `filterSpeckle`, `colorPrecision`, `maxColors`, `layerDifference`.
+  - **Penyematan Metadata SVG Dublin Core Otomatis**: Tag `<title>`, `<desc>`, dan `<metadata><rdf:RDF>` (`<dc:subject>`, `<dc:creator>`), serta opsi penonaktifan via `embedMetadata: false` / `--no-metadata`.
+- **Perintah CLI `export-vector` (Alias: `vector`, `vectorize`, `svg`)**:
+  - `node index.js export-vector "foto/*.png" [--profile microstock] [--hierarchical cutout] [--simplify 1.5] [--max-colors 32]`
+  - Mendukung opsi `--profile`, `--hierarchical`, `--simplify`, `--max-colors`, `--corner-threshold`, `--layer-difference`, `--no-metadata`, serta preset SQLite.
+- **Antarmuka Web UI & REST API (`public/` & `src/server.js`)**:
+  - Endpoint REST API `GET /api/vector-profiles` dan `POST /api/export-vector` dengan parameter konfigurasi lengkap.
+  - **Modal Pengaturan Parameter Vektor (`vectorSettingsModal`)**: Dialog visual lengkap dengan slider simplifikasi node, filter speckle, presisi warna, batas maksimal warna, struktur layer cutout/stacked, dan toggle metadata.
+  - Tombol aksi **⚙️ PARAMETER** pada sidebar dan ringkasan pengaturan aktif (*live badge*).
+  - Sinkronisasi otomatis preferensi pengguna dengan `localStorage`.
+- **Engine Pembaca Metadata Vektor SVG Murni Node.js (`src/svg.js`)**:
+  - Deteksi berkas SVG cerdas (`isSvg`): memeriksa tag pembuka `<svg>`, deklarasi XML, dan eliminasi berkas biner (JPEG/PNG).
+  - Ekstraksi dimensi fisik dan rasio aspek dari atribut `width`, `height`, dan `viewBox`.
+  - Ekstraksi tag metadata standar SVG: `<title>` dan `<desc>` dengan decoding entitas XML (`&amp;`, `&quot;`, numeric hex/dec entities).
+  - Ekstraksi metadata terstruktur Dublin Core / Adobe XMP di dalam blok `<metadata><rdf:RDF>`: `<dc:title>`, `<dc:description>`, `<dc:creator>`, dan `<dc:subject>` (kata kunci/keywords array).
+  - Ekstraksi informasi software generator dari komentar XML (mis. visioncortex VTracer, Adobe Illustrator, Inkscape).
+- **Integrasi Penuh Pipeline Metadata & Rename**:
+  - `readFileMeta` & `buildExifView` (`src/meta.js`): memetakan metadata SVG secara seragam dengan EXIF/IPTC.
+  - `expandFiles` & `buildName` (`src/rename.js`): mengenali ekstensi `.svg` untuk pemrosesan batch dan penamaan otomatis berbasis template metadata.
+  - CLI `node index.js read` (`src/cli.js`): menampilkan informasi format SVG, dimensi, software, judul, kata kunci, dan deskripsi secara rapi (termasuk output `--json`).
+  - Web UI & REST API (`src/server.js` & `public/app.js`): menampilkan thumbnail SVG vektor di galeri, endpoint `/api/files` & `/api/meta-detail` mengenali format SVG, dan modal inspeksi menampilkan badge format SVG beserta rincian kata kunci microstock.
+- **Pengujian Terpadu**:
+  - Penambahan skenario selftest konversi raster ke SVG, validasi tag Dublin Core, profil microstock cutout, toggle `--no-metadata`, serta parser metadata SVG (total 105 pengujian lulus 100%).
+
 ## [1.1.0] - 2026-09-15
 
 Rilis Fitur Baru Versi 1.1.0 — **Engine Ekspor JPEG Zero-Dependency (`src/image.js`)**, decoder PNG murni, encoder baseline JPEG berkecepatan tinggi (Fast AAN FDCT), integrasi CLI `export-jpeg`, dan dukungan Microstock Ready di Web UI.

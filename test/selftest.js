@@ -10,6 +10,8 @@ import * as iptc from "../src/iptc.js";
 import * as utils from "../src/utils.js";
 import * as db from "../src/db.js";
 import * as imageMod from "../src/image.js";
+import * as vectorMod from "../src/vector.js";
+import * as svg from "../src/svg.js";
 import { encodeGrayJpeg } from "../src/tinyjpeg.js";
 import * as meta from "../src/meta.js";
 import { buildExifView, collectIptcEdits, parseXmpMetadata } from "../src/meta.js";
@@ -357,6 +359,101 @@ export function runSelftest() {
 
   if (fs.existsSync(tmpPngPath)) fs.unlinkSync(tmpPngPath);
   if (fs.existsSync(tmpJpgPath)) fs.unlinkSync(tmpJpgPath);
+
+  // 17. Export Gambar ke Vektor SVG (VTracer WebAssembly & Metadata Injection)
+  const tmpVectorSrc = path.join(process.cwd(), "test-temp-vector-src.jpg");
+  const tmpVectorDest = path.join(process.cwd(), "test-temp-vector-dest.svg");
+  fs.writeFileSync(tmpVectorSrc, encodeGrayJpeg(16, 16));
+
+  const vecRes = vectorMod.exportFileToVector(tmpVectorSrc, tmpVectorDest, {
+    preset: "poster",
+    mode: "spline",
+    title: "Vektor Grafis Minimalis",
+    keywords: ["vektor", "svg", "minimalis", "art"],
+    caption: "Ilustrasi vektor berkualitas tinggi",
+    author: "Seto Pratama",
+  });
+
+  assert(vecRes && vecRes.size > 0, "exportFileToVector menghasilkan berkas SVG");
+  assert(fs.existsSync(tmpVectorDest), "Berkas SVG output berhasil dibuat di disk");
+
+  const svgContent = fs.readFileSync(tmpVectorDest, "utf8");
+  assert(svgContent.includes("<svg") && svgContent.includes("</svg>"), "Format berkas merupakan SVG valid");
+  assert(svgContent.includes("<title>Vektor Grafis Minimalis</title>"), "Tag <title> SVG tersimpan");
+  assert(svgContent.includes("<desc>Ilustrasi vektor berkualitas tinggi</desc>"), "Tag <desc> SVG tersimpan");
+  assert(svgContent.includes("<rdf:li>vektor</rdf:li>"), "Metadata RDF Dublin Core dc:subject tersimpan di SVG");
+  assert(svgContent.includes("<rdf:li>Seto Pratama</rdf:li>"), "Metadata RDF Dublin Core dc:creator tersimpan di SVG");
+
+  // 18. Pengujian Profil Microstock (Cutout & Simplifikasi Node) & Toggle Metadata
+  const tmpVectorMicroDest = path.join(process.cwd(), "test-temp-micro.svg");
+  vectorMod.exportFileToVector(tmpVectorSrc, tmpVectorMicroDest, {
+    profile: "microstock",
+    simplify: 1.5,
+    maxColors: 32,
+    embedMetadata: false, // Uji opsi tanpa metadata
+  });
+
+  assert(fs.existsSync(tmpVectorMicroDest), "Berkas SVG profil microstock dibuat");
+  const microSvg = fs.readFileSync(tmpVectorMicroDest, "utf8");
+  assert(!microSvg.includes("<metadata>"), "Opsi embedMetadata: false tidak menyematkan blok metadata");
+  assert(microSvg.includes("<path"), "Kurva path berhasil dihasilkan");
+
+  if (fs.existsSync(tmpVectorSrc)) fs.unlinkSync(tmpVectorSrc);
+  if (fs.existsSync(tmpVectorDest)) fs.unlinkSync(tmpVectorDest);
+  if (fs.existsSync(tmpVectorMicroDest)) fs.unlinkSync(tmpVectorMicroDest);
+
+  // 19. Pengujian Parser & Pembacaan Metadata SVG
+  const sampleSvg = `<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 25.0.0, SVG Export Plug-In . SVG Version: 6.00 Build 0) -->
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 width="800px" height="600px" viewBox="0 0 800 600">
+  <title>Pantai Kuta Bali &amp; Sunset</title>
+  <desc>Pemandangan indah matahari terbenam di Bali</desc>
+  <metadata>
+    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <rdf:Description rdf:about="">
+        <dc:title><rdf:Alt><rdf:li xml:lang="x-default">Pantai Kuta Bali &amp; Sunset</rdf:li></rdf:Alt></dc:title>
+        <dc:description><rdf:Alt><rdf:li xml:lang="x-default">Pemandangan indah matahari terbenam di Bali</rdf:li></rdf:Alt></dc:description>
+        <dc:creator><rdf:Seq><rdf:li>Seto Pratama</rdf:li></rdf:Seq></dc:creator>
+        <dc:subject><rdf:Bag><rdf:li>bali</rdf:li><rdf:li>sunset</rdf:li><rdf:li>pantai</rdf:li></rdf:Bag></dc:subject>
+      </rdf:Description>
+    </rdf:RDF>
+  </metadata>
+  <rect width="800" height="600" fill="#ffaa00" />
+</svg>`;
+
+  assert(svg.isSvg(sampleSvg), "isSvg mengenali string XML SVG");
+  assert(svg.isSvg(Buffer.from(sampleSvg)), "isSvg mengenali Buffer SVG");
+  assert(!svg.isSvg(tiny), "isSvg menolak berkas JPEG");
+  assert(!svg.isSvg("bukan svg sama sekali"), "isSvg menolak teks acak non-SVG");
+
+  const parsedSvg = svg.parseSvgMeta(sampleSvg);
+  assert(parsedSvg.dims && parsedSvg.dims.w === 800 && parsedSvg.dims.h === 600, "Dimensi SVG (800x600) terekstraksi");
+  assert(parsedSvg.title === "Pantai Kuta Bali & Sunset", "Title SVG dengan entitas XML terekstraksi");
+  assert(parsedSvg.caption === "Pemandangan indah matahari terbenam di Bali", "Caption / Desc SVG terekstraksi");
+  assert(parsedSvg.author === "Seto Pratama", "Author / Creator SVG terekstraksi");
+  assert(parsedSvg.keywords && parsedSvg.keywords.includes("sunset") && parsedSvg.keywords.length === 3, "Keywords Dublin Core terekstraksi");
+  assert(parsedSvg.software && parsedSvg.software.includes("Adobe Illustrator"), "Software / Generator comment terekstraksi");
+
+  // Simpan berkas SVG sementara dan uji integrasi dengan readFileMeta & buildExifView
+  const tmpSvgFile = path.join(process.cwd(), "test-temp-baca.svg");
+  fs.writeFileSync(tmpSvgFile, sampleSvg, "utf8");
+
+  const readRes = meta.readFileMeta(tmpSvgFile);
+  assert(readRes.isSvg === true, "readFileMeta mengenali berkas sebagai SVG");
+  assert(readRes.dims && readRes.dims.w === 800, "Dimensi terisi di hasil readFileMeta");
+
+  const svgView = meta.buildExifView(readRes.model, readRes.dims, readRes.iptc, readRes.xmp, readRes.text, readRes.svgMeta);
+  assert(svgView && svgView.title === "Pantai Kuta Bali & Sunset", "buildExifView memetakan title SVG");
+  assert(svgView.author === "Seto Pratama", "buildExifView memetakan author SVG");
+  assert(svgView.keywords.includes("bali"), "buildExifView memetakan keywords SVG");
+  assert(svgView.software && svgView.software.includes("Adobe Illustrator"), "buildExifView memetakan software SVG");
+
+  // Uji penamaan template dengan SVG
+  const newSvgName = buildName(tmpSvgFile, "{title}_{width}x{height}", 1, readRes);
+  assert(path.basename(newSvgName) === "Pantai Kuta Bali & Sunset_800x600.svg", "buildName menghasilkan nama SVG yang sesuai: " + path.basename(newSvgName));
+
+  if (fs.existsSync(tmpSvgFile)) fs.unlinkSync(tmpSvgFile);
 
   console.log("");
   if (fail === 0) {

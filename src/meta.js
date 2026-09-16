@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import * as jpeg from "./jpeg.js";
 import * as png from "./png.js";
+import * as svg from "./svg.js";
 import * as exif from "./exif.js";
 import * as iptc from "./iptc.js";
 import { parseDateInput, toExifDate } from "./utils.js";
@@ -59,21 +60,24 @@ export function readFileMeta(filePath) {
   const st = fs.statSync(filePath);
   const isJpeg = jpeg.isJpeg(buf);
   const isPng = png.isPng(buf);
+  const isSvg = svg.isSvg(buf);
   const r = {
     file: filePath,
     size: st.size,
     mtime: st.mtime,
     isJpeg,
     isPng,
+    isSvg,
     exifPresent: false,
     model: null,
     iptc: null,
     xmp: null,
     text: null,
     dims: null,
+    svgMeta: null,
     exifError: null,
   };
-  if (!isJpeg && !isPng) return r;
+  if (!isJpeg && !isPng && !isSvg) return r;
 
   if (isJpeg) {
     const parsed = jpeg.parseJpeg(buf);
@@ -118,6 +122,17 @@ export function readFileMeta(filePath) {
         }
       }
     }
+  } else if (isSvg) {
+    const parsedSvg = svg.parseSvgMeta(buf);
+    r.dims = parsedSvg.dims;
+    r.svgMeta = parsedSvg;
+    r.xmp = {
+      title: parsedSvg.title,
+      description: parsedSvg.description,
+      caption: parsedSvg.caption,
+      author: parsedSvg.author,
+      keywords: parsedSvg.keywords,
+    };
   }
   return r;
 }
@@ -128,14 +143,15 @@ function val(entries, tag) {
 }
 
 /**
- * Ubah model EXIF (+ data IPTC / XMP / Text) menjadi objek tampilan yang ramah.
+ * Ubah model EXIF (+ data IPTC / XMP / Text / SVG) menjadi objek tampilan yang ramah.
  * @param {object|null} model    Model EXIF (dari exif.parseTiff), boleh null
  * @param {object|null} dims     { w, h }
  * @param {object|null} iptcData { title, keywords[], caption, author } (dari iptc.readIptcFromApp13)
  * @param {object|null} xmpData  { title, keywords[], description, caption, author }
  * @param {Array|null}  textData Array chunk teks PNG { keyword, text }
+ * @param {object|null} svgData  Data metadata SVG { software, ... }
  */
-export function buildExifView(model, dims, iptcData, xmpData = null, textData = null) {
+export function buildExifView(model, dims, iptcData, xmpData = null, textData = null, svgData = null) {
   const ifd0 = (model && model.ifd0) || [];
   const ex = (model && model.exif) || [];
   const gp = (model && model.gps) || [];
@@ -239,7 +255,7 @@ export function buildExifView(model, dims, iptcData, xmpData = null, textData = 
     make: val(ifd0, exif.T.Make) || null,
     model: val(ifd0, exif.T.Model) || null,
     lens: val(ex, exif.T.LensModel) || null,
-    software: val(ifd0, exif.T.Software) || null,
+    software: val(ifd0, exif.T.Software) || (svgData && svgData.software) || null,
     artist: val(ifd0, exif.T.Artist) || null,
     copyright: val(ifd0, exif.T.Copyright) || null,
     description: val(ifd0, exif.T.ImageDescription) || caption || null,

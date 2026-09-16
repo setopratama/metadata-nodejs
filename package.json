@@ -26,5 +26,8 @@
     "gambar",
     "cli"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@visioncortex/vtracer": "^1.0.0-alpha.4"
+  }
 }
