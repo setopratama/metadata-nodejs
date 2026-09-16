@@ -7,14 +7,14 @@ import { readFileMeta, buildExifView } from "./meta.js";
 const IMAGE_EXT = [
   ".jpg", ".jpeg", ".png", ".gif", ".webp",
   ".tif", ".tiff", ".bmp", ".heic", ".heif",
-  ".svg",
+  ".svg", ".eps",
 ];
 
 function isImageFilename(name) {
   const ext = path.extname(name).toLowerCase();
   if (IMAGE_EXT.includes(ext)) return true;
   const n = name.toLowerCase();
-  if (n.startsWith(".png") || n.startsWith(".jpg") || n.startsWith(".jpeg") || n.startsWith(".svg")) return true;
+  if (n.startsWith(".png") || n.startsWith(".jpg") || n.startsWith(".jpeg") || n.startsWith(".svg") || n.startsWith(".eps")) return true;
   return false;
 }
 
@@ -77,8 +77,8 @@ export function expandFiles(args, opts = {}) {
 export function buildName(filePath, template, index, fileMeta, customTitle = null) {
   const parsed = path.parse(filePath);
   const folder = path.basename(parsed.dir) || "";
-  const view = fileMeta && (fileMeta.model || fileMeta.iptc || fileMeta.xmp || fileMeta.text || fileMeta.svgMeta)
-    ? buildExifView(fileMeta.model, fileMeta.dims, fileMeta.iptc, fileMeta.xmp, fileMeta.text, fileMeta.svgMeta)
+  const view = fileMeta && (fileMeta.model || fileMeta.iptc || fileMeta.xmp || fileMeta.text || fileMeta.svgMeta || fileMeta.epsMeta)
+    ? buildExifView(fileMeta.model, fileMeta.dims, fileMeta.iptc, fileMeta.xmp, fileMeta.text, fileMeta.svgMeta, fileMeta.epsMeta)
     : null;
 
   let ext = parsed.ext;
@@ -86,6 +86,7 @@ export function buildName(filePath, template, index, fileMeta, customTitle = nul
     if (fileMeta.isPng) ext = ".png";
     else if (fileMeta.isJpeg) ext = ".jpg";
     else if (fileMeta.isSvg) ext = ".svg";
+    else if (fileMeta.isEps) ext = ".eps";
   }
 
   let dateObj = null;

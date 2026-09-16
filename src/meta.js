@@ -1,8 +1,10 @@
-// Modul tingkat tinggi: membaca, mengubah, dan menghapus metadata EXIF & IPTC.
+// Modul tingkat tinggi: membaca, mengubah, dan menghapus metadata EXIF & IPTC & XMP.
+// Mendukung format JPEG (.jpg, .jpeg), PNG (.png), SVG (.svg), dan EPS (.eps).
 import fs from "node:fs";
 import * as jpeg from "./jpeg.js";
 import * as png from "./png.js";
 import * as svg from "./svg.js";
+import * as eps from "./eps.js";
 import * as exif from "./exif.js";
 import * as iptc from "./iptc.js";
 import { parseDateInput, toExifDate } from "./utils.js";
@@ -54,13 +56,14 @@ export function parseXmpMetadata(xmpStr) {
   return meta;
 }
 
-/** Baca informasi + model EXIF dari satu file. */
+/** Baca informasi + model EXIF / IPTC / XMP / Text dari satu file. */
 export function readFileMeta(filePath) {
   const buf = fs.readFileSync(filePath);
   const st = fs.statSync(filePath);
   const isJpeg = jpeg.isJpeg(buf);
   const isPng = png.isPng(buf);
   const isSvg = svg.isSvg(buf);
+  const isEps = eps.isEps(buf);
   const r = {
     file: filePath,
     size: st.size,
@@ -68,6 +71,7 @@ export function readFileMeta(filePath) {
     isJpeg,
     isPng,
     isSvg,
+    isEps,
     exifPresent: false,
     model: null,
     iptc: null,
@@ -75,9 +79,10 @@ export function readFileMeta(filePath) {
     text: null,
     dims: null,
     svgMeta: null,
+    epsMeta: null,
     exifError: null,
   };
-  if (!isJpeg && !isPng && !isSvg) return r;
+  if (!isJpeg && !isPng && !isSvg && !isEps) return r;
 
   if (isJpeg) {
     const parsed = jpeg.parseJpeg(buf);
@@ -117,7 +122,7 @@ export function readFileMeta(filePath) {
     if (parsed.text && parsed.text.length > 0) {
       r.text = parsed.text;
       for (const item of parsed.text) {
-        if (item.keyword === "XML:com.adobe.xmp" && !r.xmp) {
+        if ((item.keyword === "XML:com.adobe.xmp" || item.keyword.toLowerCase() === "xmp") && !r.xmp) {
           r.xmp = parseXmpMetadata(item.text);
         }
       }
@@ -133,6 +138,21 @@ export function readFileMeta(filePath) {
       author: parsedSvg.author,
       keywords: parsedSvg.keywords,
     };
+  } else if (isEps) {
+    try {
+      const parsedEps = eps.parseEpsMeta(buf);
+      r.dims = parsedEps.dims;
+      r.epsMeta = parsedEps;
+      r.xmp = parsedEps.xmp || {
+        title: parsedEps.title,
+        description: parsedEps.title,
+        caption: parsedEps.title,
+        author: parsedEps.author,
+        keywords: parsedEps.keywords || [],
+      };
+    } catch (e) {
+      r.exifError = e.message;
+    }
   }
   return r;
 }
@@ -143,15 +163,16 @@ function val(entries, tag) {
 }
 
 /**
- * Ubah model EXIF (+ data IPTC / XMP / Text / SVG) menjadi objek tampilan yang ramah.
+ * Ubah model EXIF (+ data IPTC / XMP / Text / SVG / EPS) menjadi objek tampilan yang ramah.
  * @param {object|null} model    Model EXIF (dari exif.parseTiff), boleh null
  * @param {object|null} dims     { w, h }
  * @param {object|null} iptcData { title, keywords[], caption, author } (dari iptc.readIptcFromApp13)
  * @param {object|null} xmpData  { title, keywords[], description, caption, author }
  * @param {Array|null}  textData Array chunk teks PNG { keyword, text }
  * @param {object|null} svgData  Data metadata SVG { software, ... }
+ * @param {object|null} epsData  Data metadata EPS { title, author, creator, creationDate, copyright, software, keywords, ... }
  */
-export function buildExifView(model, dims, iptcData, xmpData = null, textData = null, svgData = null) {
+export function buildExifView(model, dims, iptcData, xmpData = null, textData = null, svgData = null, epsData = null) {
   const ifd0 = (model && model.ifd0) || [];
   const ex = (model && model.exif) || [];
   const gp = (model && model.gps) || [];
@@ -176,6 +197,14 @@ export function buildExifView(model, dims, iptcData, xmpData = null, textData = 
   const width = val(ex, exif.T.PixelX) || (dims && dims.w) || null;
   const height = val(ex, exif.T.PixelY) || (dims && dims.h) || null;
 
+  // Helper pencari teks berdasarkan keyword case-insensitive
+  const findText = (keys) => {
+    if (!Array.isArray(textData)) return null;
+    const lowerKeys = keys.map((k) => k.toLowerCase());
+    const found = textData.find((t) => t.keyword && lowerKeys.includes(t.keyword.toLowerCase()));
+    return found && found.text ? found.text.trim() : null;
+  };
+
   let keywords = (iptcData && iptcData.keywords && iptcData.keywords.length ? iptcData.keywords : []);
   if (!keywords.length && model) {
     const rawKw = val(ifd0, exif.T.XPKeywords);
@@ -197,10 +226,13 @@ export function buildExifView(model, dims, iptcData, xmpData = null, textData = 
     keywords = xmpData.keywords.slice();
   }
   if (!keywords.length && Array.isArray(textData)) {
-    const kwChunk = textData.find((t) => t.keyword && t.keyword.toLowerCase() === "keywords");
-    if (kwChunk && kwChunk.text) {
-      keywords = kwChunk.text.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+    const kwText = findText(["keywords", "tags", "subject"]);
+    if (kwText) {
+      keywords = kwText.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
     }
+  }
+  if (!keywords.length && epsData && epsData.keywords && epsData.keywords.length) {
+    keywords = epsData.keywords.slice();
   }
 
   let title = (iptcData && iptcData.title) || val(ifd0, exif.T.ImageDescription) || null;
@@ -215,8 +247,10 @@ export function buildExifView(model, dims, iptcData, xmpData = null, textData = 
     title = xmpData.title;
   }
   if (!title && Array.isArray(textData)) {
-    const titleChunk = textData.find((t) => t.keyword && t.keyword.toLowerCase() === "title");
-    if (titleChunk && titleChunk.text) title = titleChunk.text.trim();
+    title = findText(["title", "headline", "document title"]);
+  }
+  if (!title && epsData && epsData.title) {
+    title = epsData.title;
   }
 
   let caption = (iptcData && iptcData.caption) || val(ifd0, exif.T.ImageDescription) || null;
@@ -231,8 +265,10 @@ export function buildExifView(model, dims, iptcData, xmpData = null, textData = 
     caption = xmpData.description || xmpData.caption;
   }
   if (!caption && Array.isArray(textData)) {
-    const capChunk = textData.find((t) => t.keyword && ["description", "comment"].includes(t.keyword.toLowerCase()));
-    if (capChunk && capChunk.text) caption = capChunk.text.trim();
+    caption = findText(["description", "comment", "caption", "abstract", "summary"]);
+  }
+  if (!caption && epsData && (epsData.title || (epsData.xmp && (epsData.xmp.description || epsData.xmp.caption)))) {
+    caption = (epsData.xmp && (epsData.xmp.description || epsData.xmp.caption)) || epsData.title;
   }
 
   let author = (iptcData && iptcData.author) || val(ifd0, exif.T.Artist) || null;
@@ -247,20 +283,38 @@ export function buildExifView(model, dims, iptcData, xmpData = null, textData = 
     author = xmpData.author;
   }
   if (!author && Array.isArray(textData)) {
-    const authChunk = textData.find((t) => t.keyword && ["author", "artist"].includes(t.keyword.toLowerCase()));
-    if (authChunk && authChunk.text) author = authChunk.text.trim();
+    author = findText(["author", "artist", "creator", "by-line"]);
   }
+  if (!author && epsData && (epsData.author || epsData.creator || epsData.forUser)) {
+    author = epsData.author || epsData.creator || epsData.forUser;
+  }
+
+  const software = val(ifd0, exif.T.Software) ||
+    (svgData && svgData.software) ||
+    (epsData && epsData.software) ||
+    findText(["software", "source", "tool"]) ||
+    null;
+
+  const copyright = val(ifd0, exif.T.Copyright) ||
+    (epsData && epsData.copyright) ||
+    findText(["copyright", "legal"]) ||
+    null;
+
+  const dateTime = val(ifd0, exif.T.DateTime) ||
+    (epsData && epsData.creationDate) ||
+    findText(["creation time", "date"]) ||
+    null;
 
   return {
     make: val(ifd0, exif.T.Make) || null,
     model: val(ifd0, exif.T.Model) || null,
     lens: val(ex, exif.T.LensModel) || null,
-    software: val(ifd0, exif.T.Software) || (svgData && svgData.software) || null,
-    artist: val(ifd0, exif.T.Artist) || null,
-    copyright: val(ifd0, exif.T.Copyright) || null,
+    software,
+    artist: val(ifd0, exif.T.Artist) || author || null,
+    copyright,
     description: val(ifd0, exif.T.ImageDescription) || caption || null,
     orientation: val(ifd0, exif.T.Orientation) || null,
-    dateTime: val(ifd0, exif.T.DateTime) || null,
+    dateTime,
     dateTimeOriginal: val(ex, exif.T.DateTimeOriginal) || null,
     dateTimeDigitized: val(ex, exif.T.DateTimeDigitized) || null,
     exposureTime: val(ex, exif.T.ExposureTime) || null,
@@ -498,6 +552,8 @@ export function editFile(filePath, opts) {
 
   let model = null;
   let beforeIptc = null;
+  let beforeXmp = null;
+  let beforeText = null;
   let dims = null;
 
   if (isJp) {
@@ -511,15 +567,27 @@ export function editFile(filePath, opts) {
           buf.subarray(parsed.iptc.payloadStart, parsed.iptc.payloadStart + parsed.iptc.payloadLen)
         )
       : null;
+    if (parsed.xmp) {
+      const xmpRaw = buf.subarray(parsed.xmp.payloadStart + 29, parsed.xmp.payloadStart + parsed.xmp.payloadLen);
+      beforeXmp = parseXmpMetadata(xmpRaw.toString("utf8"));
+    }
   } else if (isPn) {
     const parsed = png.parsePng(buf);
     dims = parsed.dims;
     model = parsed.exif
       ? exif.parseTiff(buf, parsed.exif.payloadStart, parsed.exif.payloadStart + parsed.exif.payloadLen)
       : exif.createEmptyModel();
+    if (parsed.text && parsed.text.length > 0) {
+      beforeText = parsed.text;
+      for (const item of parsed.text) {
+        if (item.keyword === "XML:com.adobe.xmp" && !beforeXmp) {
+          beforeXmp = parseXmpMetadata(item.text);
+        }
+      }
+    }
   }
 
-  const before = buildExifView(model, dims, beforeIptc);
+  const before = buildExifView(model, dims, beforeIptc, beforeXmp, beforeText);
 
   // Field IPTC yang akan ditulis (gabungan lama + opsi CLI)
   const hasIptcOpts = ["title", "keywords", "caption", "author"].some(
@@ -595,32 +663,41 @@ export function editFile(filePath, opts) {
   let after = null;
   if (isJp) {
     const p2 = jpeg.parseJpeg(out);
+    let afterIptc = null;
+    let afterXmp = null;
+    if (p2.iptc) {
+      afterIptc = iptc.readIptcFromApp13(
+        out.subarray(p2.iptc.payloadStart, p2.iptc.payloadStart + p2.iptc.payloadLen)
+      );
+    }
+    if (p2.xmp) {
+      const xmpRaw = out.subarray(p2.xmp.payloadStart + 29, p2.xmp.payloadStart + p2.xmp.payloadLen);
+      afterXmp = parseXmpMetadata(xmpRaw.toString("utf8"));
+    }
     if (p2.exif) {
-      const afterIptc = p2.iptc
-        ? iptc.readIptcFromApp13(
-            out.subarray(p2.iptc.payloadStart, p2.iptc.payloadStart + p2.iptc.payloadLen)
-          )
-        : null;
       after = buildExifView(
         exif.parseTiff(out, p2.exif.payloadStart + 6, p2.exif.payloadStart + p2.exif.payloadLen),
         dims,
-        afterIptc
+        afterIptc,
+        afterXmp
       );
-    } else if (p2.iptc) {
-      const afterIptc = iptc.readIptcFromApp13(
-        out.subarray(p2.iptc.payloadStart, p2.iptc.payloadStart + p2.iptc.payloadLen)
-      );
-      after = buildExifView(null, dims, afterIptc);
+    } else if (afterIptc || afterXmp) {
+      after = buildExifView(null, dims, afterIptc, afterXmp);
     }
   } else if (isPn) {
     const p2 = png.parsePng(out);
-    if (p2.exif) {
-      after = buildExifView(
-        exif.parseTiff(out, p2.exif.payloadStart, p2.exif.payloadStart + p2.exif.payloadLen),
-        dims,
-        null
-      );
+    let afterXmp = null;
+    if (p2.text && p2.text.length > 0) {
+      for (const item of p2.text) {
+        if (item.keyword === "XML:com.adobe.xmp" && !afterXmp) {
+          afterXmp = parseXmpMetadata(item.text);
+        }
+      }
     }
+    const afterModel = p2.exif
+      ? exif.parseTiff(out, p2.exif.payloadStart, p2.exif.payloadStart + p2.exif.payloadLen)
+      : null;
+    after = buildExifView(afterModel, dims, null, afterXmp, p2.text);
   }
   return { file: filePath, before, after, backup: makeBackup };
 }
@@ -643,8 +720,13 @@ export function stripFile(filePath, opts) {
     const noXmp = jpeg.removeXmp(out);
     if (noXmp) out = noXmp;
   } else if (isPn) {
-    const noExif = png.removeExif(buf);
-    if (noExif) out = noExif;
+    const noMeta = png.removePngMetadata(buf);
+    if (noMeta) {
+      out = noMeta;
+    } else {
+      const noExif = png.removeExif(buf);
+      if (noExif) out = noExif;
+    }
   }
 
   if (out === buf) return { file: filePath, stripped: false };

@@ -37,9 +37,10 @@ Dokumen ini memuat analisis arsitektur mendalam, spesifikasi *tech stack*, serta
    - Setiap error (rename, edit, apply, strip, parser) dicatat otomatis ke `imgmeta.log` (mode *append*) di folder kerja, lengkap dengan *timestamp* dan jenis operasi.
    - Ringkasan log ditampilkan di akhir sesi perintah terminal.
 
-7. **Tracing Raster ke Vektor SVG & Pembaca Metadata Vektor Murni**
+7. **Tracing Raster ke Vektor SVG & Pembaca Metadata Vektor Murni (SVG & EPS)**
    - **Tracing Vektor VTracer (`src/vector.js`)**: Mengonversi gambar raster ke vektor SVG berbasis WebAssembly `@visioncortex/vtracer`. Menyediakan profil microstock (`cutout` tanpa tumpukan ganda, simplifikasi node, batas palet warna) dan menyematkan metadata Dublin Core / Adobe XMP (`<dc:title>`, `<dc:description>`, `<dc:creator>`, `<dc:subject>`).
    - **Parser Metadata SVG Zero-Dependency (`src/svg.js`)**: Mengekstrak dimensi fisik (`width`, `height`, `viewBox`), software generator, dan tag Dublin Core dari berkas `.svg` tanpa pustaka pihak ketiga.
+   - **Parser Metadata EPS Zero-Dependency (`src/eps.js`)**: Mengekstrak DSC Comments (`%%Title:`, `%%Creator:`, `%%For:`, `%%CreationDate:`, `%%Copyright:`, `%%BoundingBox:` / `%%HiResBoundingBox:`) serta paket Adobe XMP Dublin Core dari format ASCII EPS maupun Binary DOS EPS (header 30-byte `0xC5D0D3C6`).
 
 ---
 
@@ -60,18 +61,19 @@ src/
   server.js         HTTP server murni Node.js (REST API & static server Web UI)
   vector.js         Engine tracing raster-ke-vektor SVG (@visioncortex/vtracer WASM)
   svg.js            Parser metadata berkas vektor SVG murni (zero-dependency)
+  eps.js            Parser metadata berkas vektor EPS murni zero-dependency (ASCII & Binary DOS EPS)
   image.js          Engine decoding PNG murni & fast AAN FDCT JPEG encoder
   jpeg.js           Parser segmen JPEG, dimensi SOF, injeksi/remove APP1, APP13, XMP
-  png.js            Parser chunk PNG, CRC32 bitwise table, eXIf, iTXt uncompressed UTF-8
+  png.js            Parser chunk PNG, CRC32 bitwise table, eXIf, tEXt, zTXt, iTXt (kompresi zlib)
   exif.js           Engine TIFF/EXIF: IFD0, ExifIFD, GPS, Interop, IFD1, endianness, sort tag
   iptc.js           Photoshop APP13 8BIM & IPTC IIM parser/serializer, UTF-8 charset declaration
-  meta.js           Orkestrasi metadata tingkat tinggi (EXIF, IPTC, XMP, SVG)
+  meta.js           Orkestrasi metadata tingkat tinggi (EXIF, IPTC, XMP, SVG, EPS)
   rename.js         Ekspansi glob/folder, generator template token, two-pass batch rename
   utils.js          Warna ANSI, format tanggal EXIF, sanitasi Windows, unique target, logFailure
   tinyjpeg.js       Encoder JPEG grayscale 8x8 sintetis khusus pengujian mandiri
 public/             Frontend antarmuka Web UI (Industrial Minimalism)
 test/
-  selftest.js       Suite pengujian internal end-to-end (105 skenario pengujian)
+  selftest.js       Suite pengujian internal end-to-end (133 skenario pengujian)
 ```
 
 ---
@@ -83,9 +85,9 @@ test/
 | **Runtime** | **Node.js** (versi `>= 16.0.0`, direkomendasikan `>= 22.0.0` untuk `node:sqlite`) |
 | **Module System** | **ESM Murni** (`"type": "module"`, skema import `node:*`) |
 | **Dependencies** | Inti parser & serializer zero-dependency; `@visioncortex/vtracer` untuk WebAssembly vector tracing |
-| **Standard Libraries** | `node:fs` (sinkron: `readFileSync`, `writeFileSync`, `copyFileSync`, `renameSync`, `readdirSync`, `appendFileSync`), `node:path`, `node:sqlite` |
+| **Standard Libraries** | `node:fs` (sinkron: `readFileSync`, `writeFileSync`, `copyFileSync`, `renameSync`, `readdirSync`, `appendFileSync`), `node:path`, `node:sqlite`, `node:zlib` |
 | **Binary Processing** | Native Node.js `Buffer` (`readUInt16BE/LE`, `readUInt32BE/LE`, `subarray`, `Buffer.concat`, `Buffer.alloc`) |
-| **Standar Format** | - **TIFF 6.0 / EXIF 2.3**: IFD0, ExifIFD, GPS IFD, Interop IFD, IFD1 (thumbnail).<br>- **IPTC IIM 4.1**: APP13 Photoshop 3.0 8BIM (ID 0x0404), Record 1 (Charset), Record 2 (Object Data).<br>- **Adobe XMP & Dublin Core RDF**: W3C RDF XML Packet (`<dc:subject><rdf:Bag>`, `<dc:title><rdf:Alt>`, `<dc:description>`, `<dc:creator>`).<br>- **W3C SVG 1.1**: Scalable Vector Graphics dengan embedded Dublin Core metadata.<br>- **PNG ISO/IEC 15948**: Chunks (`IHDR`, `eXIf`, `iTXt`, `tEXt`, `IEND`), Custom CRC32 Lookup Table. |
+| **Standar Format** | - **TIFF 6.0 / EXIF 2.3**: IFD0, ExifIFD, GPS IFD, Interop IFD, IFD1 (thumbnail).<br>- **IPTC IIM 4.1**: APP13 Photoshop 3.0 8BIM (ID 0x0404), Record 1 (Charset), Record 2 (Object Data).<br>- **Adobe XMP & Dublin Core RDF**: W3C RDF XML Packet (`<dc:subject><rdf:Bag>`, `<dc:title><rdf:Alt>`, `<dc:description>`, `<dc:creator>`).<br>- **W3C SVG 1.1**: Scalable Vector Graphics dengan embedded Dublin Core metadata.<br>- **Adobe EPS 3.0**: Encapsulated PostScript (ASCII & Binary DOS EPS) dengan DSC Comments & Adobe XMP.<br>- **PNG ISO/IEC 15948**: Chunks (`IHDR`, `eXIf`, `tEXt`, `zTXt`, `iTXt`, `IEND`), Custom CRC32 Lookup Table, zlib Deflate decompression. |
 | **Encoding Support** | UTF-8, Latin1 (ISO-8859-1), UCS-2 / UTF-16LE (untuk EXIF XP Tags: `XPTitle`, `XPKeywords`, `XPComment`, `XPAuthor`). |
 | **Platform Target** | Lintas platform (Windows, Linux, macOS) dengan optimasi khusus Windows (sanitasi nama file ilegal, peluncur `.cmd`). |
 

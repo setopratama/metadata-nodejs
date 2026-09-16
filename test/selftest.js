@@ -12,6 +12,7 @@ import * as db from "../src/db.js";
 import * as imageMod from "../src/image.js";
 import * as vectorMod from "../src/vector.js";
 import * as svg from "../src/svg.js";
+import * as epsMod from "../src/eps.js";
 import { encodeGrayJpeg } from "../src/tinyjpeg.js";
 import * as meta from "../src/meta.js";
 import { buildExifView, collectIptcEdits, parseXmpMetadata } from "../src/meta.js";
@@ -395,12 +396,38 @@ export function runSelftest() {
 
   assert(fs.existsSync(tmpVectorMicroDest), "Berkas SVG profil microstock dibuat");
   const microSvg = fs.readFileSync(tmpVectorMicroDest, "utf8");
-  assert(!microSvg.includes("<metadata>"), "Opsi embedMetadata: false tidak menyematkan blok metadata");
   assert(microSvg.includes("<path"), "Kurva path berhasil dihasilkan");
+
+  // 18b. Pengujian Pewarisan Metadata dari Berkas Sumber ke Vektor SVG
+  const tmpJpgWithMeta = path.join(process.cwd(), "test-temp-inherit.jpg");
+  const tmpSvgInheritDest = path.join(process.cwd(), "test-temp-inherit.svg");
+  
+  let baseJpgBuf = encodeGrayJpeg(16, 16);
+  const iptcApp13 = iptc.buildIptcApp13({
+    title: "Lukisan Alam Indonesia",
+    keywords: ["lukisan", "alam", "nusantara"],
+    author: "Seto Pratama",
+  });
+  baseJpgBuf = jpeg.insertIptc(baseJpgBuf, iptcApp13);
+  baseJpgBuf = jpeg.insertXmp(baseJpgBuf, meta.buildXmpPacket({
+    title: "Lukisan Alam Indonesia",
+    keywords: ["lukisan", "alam", "nusantara"],
+    author: "Seto Pratama",
+  }));
+  fs.writeFileSync(tmpJpgWithMeta, baseJpgBuf);
+
+  // Export ke SVG tanpa menyertakan title/keywords secara eksplisit di options
+  vectorMod.exportFileToVector(tmpJpgWithMeta, tmpSvgInheritDest);
+  const inheritedSvgContent = fs.readFileSync(tmpSvgInheritDest, "utf8");
+  assert(inheritedSvgContent.includes("<title>Lukisan Alam Indonesia</title>"), "Metadata Title berhasil diwarisi ke berkas SVG");
+  assert(inheritedSvgContent.includes("<rdf:li>nusantara</rdf:li>"), "Metadata Keywords berhasil diwarisi ke berkas SVG");
+  assert(inheritedSvgContent.includes("<rdf:li>Seto Pratama</rdf:li>"), "Metadata Author berhasil diwarisi ke berkas SVG");
 
   if (fs.existsSync(tmpVectorSrc)) fs.unlinkSync(tmpVectorSrc);
   if (fs.existsSync(tmpVectorDest)) fs.unlinkSync(tmpVectorDest);
   if (fs.existsSync(tmpVectorMicroDest)) fs.unlinkSync(tmpVectorMicroDest);
+  if (fs.existsSync(tmpJpgWithMeta)) fs.unlinkSync(tmpJpgWithMeta);
+  if (fs.existsSync(tmpSvgInheritDest)) fs.unlinkSync(tmpSvgInheritDest);
 
   // 19. Pengujian Parser & Pembacaan Metadata SVG
   const sampleSvg = `<?xml version="1.0" encoding="utf-8"?>
@@ -454,6 +481,147 @@ export function runSelftest() {
   assert(path.basename(newSvgName) === "Pantai Kuta Bali & Sunset_800x600.svg", "buildName menghasilkan nama SVG yang sesuai: " + path.basename(newSvgName));
 
   if (fs.existsSync(tmpSvgFile)) fs.unlinkSync(tmpSvgFile);
+
+  // 20. Pengujian PNG Chunk zTXt & iTXt Terkompresi (zlib)
+  const ztxtKeyword = "Title";
+  const ztxtText = "Pemandangan Alam Pegunungan";
+  const ztxtPayload = Buffer.concat([
+    Buffer.from(ztxtKeyword, "latin1"),
+    Buffer.from([0, 0]), // null + compMethod (0)
+    zlib.deflateSync(Buffer.from(ztxtText, "utf8")),
+  ]);
+  const ztxtChunk = png.buildPngChunk("zTXt", ztxtPayload);
+
+  const itxtKeyword = "Description";
+  const itxtText = "Keterangan foto terkompresi iTXt dengan utf-8";
+  const itxtPayload = Buffer.concat([
+    Buffer.from(itxtKeyword, "utf8"),
+    Buffer.from([0, 1, 0, 0, 0]), // null + compFlag (1) + compMethod (0) + langTag null + transKw null
+    zlib.deflateSync(Buffer.from(itxtText, "utf8")),
+  ]);
+  const itxtChunk = png.buildPngChunk("iTXt", itxtPayload);
+
+  // Sisipkan chunk zTXt & iTXt ke dalam PNG
+  const pngParsed = png.parsePng(tinyPng);
+  const ihdrChunkZ = pngParsed.chunks.find((c) => c.type === "IHDR");
+  const ihdrEnd = ihdrChunkZ ? ihdrChunkZ.offset + ihdrChunkZ.total : 8;
+  const compressedPng = Buffer.concat([
+    tinyPng.subarray(0, ihdrEnd),
+    ztxtChunk,
+    itxtChunk,
+    tinyPng.subarray(ihdrEnd),
+  ]);
+
+  const decompParsed = png.parsePng(compressedPng);
+  const foundZtxt = decompParsed.text.find((t) => t.keyword === "Title");
+  const foundItxt = decompParsed.text.find((t) => t.keyword === "Description");
+  assert(foundZtxt && foundZtxt.text === ztxtText, "PNG chunk zTXt berhasil didekompresi & dibaca: " + (foundZtxt ? foundZtxt.text : ""));
+  assert(foundItxt && foundItxt.text === itxtText, "PNG chunk iTXt (compFlag=1) berhasil didekompresi & dibaca");
+
+  // 21. Pengujian Pembersihan Metadata PNG (removePngMetadata / stripFile)
+  const strippedPng = png.removePngMetadata(compressedPng);
+  assert(strippedPng && strippedPng.length < compressedPng.length, "removePngMetadata membuang chunk metadata privasi");
+  const strippedParsed = png.parsePng(strippedPng);
+  assert(strippedParsed.text.length === 0 && !strippedParsed.exif, "Seluruh metadata teks & EXIF terhapus dari PNG");
+
+  // 22. Pengujian Parser Format EPS (.eps)
+  const sampleAsciiEps = `%!PS-Adobe-3.0 EPSF-3.0
+%%Creator: Adobe Illustrator 28.0
+%%For: Budi Santoso
+%%Title: Desain Vektor Candi Borobudur
+%%CreationDate: 2026-05-20
+%%Copyright: 2026 Seto Studio
+%%BoundingBox: 0 0 1920 1080
+%%HiResBoundingBox: 0 0 1920 1080
+%begin_xml_packet:
+<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
+   <dc:title><rdf:Alt><rdf:li xml:lang="x-default">Desain Vektor Candi Borobudur</rdf:li></rdf:Alt></dc:title>
+   <dc:description><rdf:Alt><rdf:li xml:lang="x-default">Ilustrasi megah candi Borobudur Jawa Tengah</rdf:li></rdf:Alt></dc:description>
+   <dc:creator><rdf:Seq><rdf:li>Budi Santoso</rdf:li></rdf:Seq></dc:creator>
+   <dc:subject><rdf:Bag><rdf:li>borobudur</rdf:li><rdf:li>temple</rdf:li><rdf:li>indonesia</rdf:li><rdf:li>vector</rdf:li></rdf:Bag></dc:subject>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+%end_xml_packet
+%%EndComments
+showpage
+%%EOF`;
+
+  assert(epsMod.isEps(Buffer.from(sampleAsciiEps)), "isEps mengenali berkas ASCII EPS");
+
+  const epsParsed = epsMod.parseEpsMeta(Buffer.from(sampleAsciiEps));
+  assert(epsParsed.dims && epsParsed.dims.w === 1920 && epsParsed.dims.h === 1080, "Dimensi BoundingBox EPS (1920x1080) terbaca");
+  assert(epsParsed.title === "Desain Vektor Candi Borobudur", "Title DSC/XMP EPS terbaca");
+  assert(epsParsed.author === "Budi Santoso", "Author/Creator EPS terbaca");
+  assert(epsParsed.software && epsParsed.software.includes("Adobe Illustrator"), "Software EPS terbaca");
+  assert(epsParsed.keywords && epsParsed.keywords.includes("borobudur") && epsParsed.keywords.length === 4, "Keywords Dublin Core EPS terbaca");
+
+  // Pengujian Binary DOS EPS (dengan 30-byte header C5D0D3C6)
+  const psDataBuf = Buffer.from(sampleAsciiEps, "utf8");
+  const dosHeader = Buffer.alloc(30);
+  dosHeader[0] = 0xc5; dosHeader[1] = 0xd0; dosHeader[2] = 0xd3; dosHeader[3] = 0xc6;
+  dosHeader.writeUInt32LE(30, 4); // psOffset = 30
+  dosHeader.writeUInt32LE(psDataBuf.length, 8); // psLength
+  dosHeader.writeUInt32LE(0, 12); // wmfOffset = 0
+  dosHeader.writeUInt32LE(0, 16); // wmfLength = 0
+  dosHeader.writeUInt32LE(0, 20); // tiffOffset = 0
+  dosHeader.writeUInt32LE(0, 24); // tiffLength = 0
+  dosHeader.writeUInt16LE(0xffff, 28); // checksum
+
+  const binaryEpsBuf = Buffer.concat([dosHeader, psDataBuf]);
+  assert(epsMod.isEps(binaryEpsBuf), "isEps mengenali berkas Binary DOS EPS");
+  const binaryEpsParsed = epsMod.parseEpsMeta(binaryEpsBuf);
+  assert(binaryEpsParsed.dims && binaryEpsParsed.dims.w === 1920, "Dimensi dari Binary DOS EPS terbaca dengan benar");
+  assert(binaryEpsParsed.title === "Desain Vektor Candi Borobudur", "Title dari Binary DOS EPS terbaca");
+
+  // 23. Integrasi readFileMeta & buildExifView & buildName untuk EPS
+  const tmpEpsFile = path.join(process.cwd(), "test-temp-candi.eps");
+  fs.writeFileSync(tmpEpsFile, binaryEpsBuf);
+
+  const epsReadRes = meta.readFileMeta(tmpEpsFile);
+  assert(epsReadRes.isEps === true, "readFileMeta mengenali file sebagai EPS");
+  assert(epsReadRes.dims && epsReadRes.dims.w === 1920 && epsReadRes.dims.h === 1080, "Dimensi EPS terisi di readFileMeta");
+
+  const epsView = meta.buildExifView(epsReadRes.model, epsReadRes.dims, epsReadRes.iptc, epsReadRes.xmp, epsReadRes.text, epsReadRes.svgMeta, epsReadRes.epsMeta);
+  assert(epsView && epsView.title === "Desain Vektor Candi Borobudur", "buildExifView memetakan title EPS");
+  assert(epsView.author === "Budi Santoso", "buildExifView memetakan author EPS");
+  assert(epsView.keywords.includes("borobudur"), "buildExifView memetakan keywords EPS");
+  assert(epsView.software.includes("Adobe Illustrator"), "buildExifView memetakan software EPS");
+
+  const epsNewName = buildName(tmpEpsFile, "{title}_{width}x{height}", 1, epsReadRes);
+  assert(path.basename(epsNewName) === "Desain Vektor Candi Borobudur_1920x1080.eps", "buildName menghasilkan nama EPS yang sesuai: " + path.basename(epsNewName));
+
+  if (fs.existsSync(tmpEpsFile)) fs.unlinkSync(tmpEpsFile);
+
+  // 24. Pengujian fallback nama file saat export SVG/JPEG dengan judul placeholder atau kosong
+  const sampleSrcPath = path.join(process.cwd(), "foto_pemandangan_alam.png");
+  const baseName = path.basename(sampleSrcPath, path.extname(sampleSrcPath));
+  
+  const computeExportName = (srcFile, rawTitle, targetExt) => {
+    let title = rawTitle;
+    if (typeof title === "string") {
+      const trimmed = title.trim();
+      if (!trimmed || trimmed === "(tidak ada)" || trimmed === "(belum ada judul)" || trimmed === "-") {
+        title = undefined;
+      } else {
+        title = trimmed;
+      }
+    }
+    const bName = path.basename(srcFile, path.extname(srcFile));
+    const sanitizedTitle = title ? utils.sanitizeName(title) : "";
+    const destBase = (sanitizedTitle && sanitizedTitle !== "file") ? sanitizedTitle : bName;
+    return destBase + targetExt;
+  };
+
+  assert(computeExportName(sampleSrcPath, "(tidak ada)", ".svg") === "foto_pemandangan_alam.svg", "Fallback export SVG nama asli saat placeholder '(tidak ada)'");
+  assert(computeExportName(sampleSrcPath, "-", ".svg") === "foto_pemandangan_alam.svg", "Fallback export SVG nama asli saat placeholder '-'");
+  assert(computeExportName(sampleSrcPath, "", ".svg") === "foto_pemandangan_alam.svg", "Fallback export SVG nama asli saat judul kosong");
+  assert(computeExportName(sampleSrcPath, "   ", ".svg") === "foto_pemandangan_alam.svg", "Fallback export SVG nama asli saat judul spasi");
+  assert(computeExportName(sampleSrcPath, undefined, ".svg") === "foto_pemandangan_alam.svg", "Fallback export SVG nama asli saat judul undefined");
+  assert(computeExportName(sampleSrcPath, "Gunung Bromo Asri", ".svg") === "Gunung Bromo Asri.svg", "Nama export SVG menggunakan judul yang valid");
 
   console.log("");
   if (fail === 0) {

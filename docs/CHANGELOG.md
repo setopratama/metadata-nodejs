@@ -41,8 +41,17 @@ Rilis Fitur Ekspor Vektor SVG & Panel Pengaturan Parameter — **Engine Tracing 
   - `expandFiles` & `buildName` (`src/rename.js`): mengenali ekstensi `.svg` untuk pemrosesan batch dan penamaan otomatis berbasis template metadata.
   - CLI `node index.js read` (`src/cli.js`): menampilkan informasi format SVG, dimensi, software, judul, kata kunci, dan deskripsi secara rapi (termasuk output `--json`).
   - Web UI & REST API (`src/server.js` & `public/app.js`): menampilkan thumbnail SVG vektor di galeri, endpoint `/api/files` & `/api/meta-detail` mengenali format SVG, dan modal inspeksi menampilkan badge format SVG beserta rincian kata kunci microstock.
+- **Penyempurnaan Parser Metadata PNG (`src/png.js`)**:
+  - Mendukung pembacaan chunk `zTXt` (kompresi zlib Deflate) yang biasa ditulis oleh Adobe Photoshop, GIMP, dan ExifTool.
+  - Mendukung pembacaan chunk `iTXt` terkompresi (`compFlag === 1`) dengan dekompresi otomatis menggunakan modul bawaan `node:zlib`.
+  - Fungsi `removePngMetadata` untuk pembersihan menyeluruh metadata privasi pada PNG (eXIf, tEXt, zTXt, iTXt).
+- **Engine Pembaca Metadata Vektor EPS Zero-Dependency (`src/eps.js`)**:
+  - Mendukung format berkas **ASCII EPS** (`%!PS-Adobe`) dan **Binary DOS EPS** (header 30-byte `0xC5D0D3C6`).
+  - Ekstraksi DSC Comments: `%%Title:`, `%%Creator:`, `%%For:`, `%%CreationDate:`, `%%Copyright:`, serta dimensi dari `%%BoundingBox:` / `%%HiResBoundingBox:`.
+  - Ekstraksi paket Adobe XMP Dublin Core (`<dc:title>`, `<dc:description>`, `<dc:creator>`, `<dc:subject>` / keywords array).
+  - Integrasi penuh pada `meta.js`, `rename.js`, `cli.js`, dan `server.js` untuk format `.eps`, `.jpeg`, `.jpg`, `.png`, `.svg`.
 - **Pengujian Terpadu**:
-  - Penambahan skenario selftest konversi raster ke SVG, validasi tag Dublin Core, profil microstock cutout, toggle `--no-metadata`, serta parser metadata SVG (total 105 pengujian lulus 100%).
+  - Penambahan skenario selftest konversi raster ke SVG, validasi tag Dublin Core, profil microstock cutout, toggle `--no-metadata`, parser metadata SVG, chunk zTXt & iTXt kompresi PNG, parser EPS ASCII & Binary DOS, serta fallback sanitasi penamaan ekspor saat judul kosong/placeholder (total 133 pengujian lulus 100%).
 
 ## [1.1.0] - 2026-09-15
 

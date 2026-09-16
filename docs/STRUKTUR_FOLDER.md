@@ -28,12 +28,13 @@ METADATA/
 │   ├── server.js             # HTTP server murni Node.js (REST API & static server Web UI)
 │   ├── vector.js             # Engine tracing raster-to-vector SVG (@visioncortex/vtracer WASM) & Dublin Core metadata
 │   ├── svg.js                # Parser metadata berkas vektor SVG zero-dependency (XML entity, dimensions, Dublin Core)
+│   ├── eps.js                # Parser metadata berkas vektor EPS zero-dependency (ASCII & Binary DOS EPS, DSC, BoundingBox, XMP)
 │   ├── image.js              # Engine konversi PNG->JPEG & Fast AAN FDCT encoder dengan injeksi metadata
 │   ├── jpeg.js               # Parser struktur segmen JPEG (APP1 EXIF, APP13 IPTC, APP1 XMP, SOF)
-│   ├── png.js                # Parser chunk PNG (eXIf, tEXt, iTXt, IHDR, CRC32 manual)
+│   ├── png.js                # Parser chunk PNG (eXIf, tEXt, zTXt, iTXt kompresi zlib, IHDR, CRC32 manual)
 │   ├── exif.js               # Parser & serializer TIFF/EXIF (IFD0, ExifIFD, GPS, IFD1/Thumbnail)
 │   ├── iptc.js               # Parser & serializer IPTC IIM (Record 2 & APP13 Photoshop 3.0 8BIM)
-│   ├── meta.js               # Lapisan orkestrasi metadata tingkat tinggi (readFileMeta, editFile, stripFile, EXIF/IPTC/XMP/SVG)
+│   ├── meta.js               # Lapisan orkestrasi metadata tingkat tinggi (readFileMeta, editFile, stripFile, EXIF/IPTC/XMP/SVG/EPS)
 │   ├── rename.js             # Batch renamer, ekspansi file glob, dan generator template nama
 │   ├── utils.js              # Utilitas warna ANSI, format byte/tanggal, sanitasi nama file, log failure
 │   └── tinyjpeg.js           # Encoder JPEG grayscale 8x8 sintetis untuk unit testing
@@ -42,7 +43,7 @@ METADATA/
 │   ├── style.css             # Desain Industrial Minimalism (Warm Monochrome Stone Palette)
 │   └── app.js                # Logika interaktif frontend (SQLite Grid, Vector Settings, Live Preview, Modal)
 ├── test/                     # Pengujian internal & selftest
-│   └── selftest.js           # Test suite round-trip (105 pengujian: EXIF, IPTC, XMP, PNG, JPEG, SVG, SQLite, Rename)
+│   └── selftest.js           # Test suite round-trip (133 pengujian: EXIF, IPTC, XMP, PNG, JPEG, SVG, EPS, SQLite, Rename)
 └── graphify-out/             # Output visualisasi knowledge graph dari pipeline /graphify
     ├── graph.html            # Visualisasi interaktif graf arsitektur
     ├── graph.json            # Data node dan relasi dependensi AST
@@ -54,7 +55,7 @@ METADATA/
 ## 2. Penjelasan Rinci Folder & Komponen Utama
 
 ### `foto/` — Folder Kerja Gambar
-- **Tujuan**: Direktori kerja default untuk meletakkan file foto (`.jpg`, `.jpeg`, `.png`, `.svg`, dll.) yang akan dibaca, diubah metadatanya, diekspor, atau diganti namanya secara batch.
+- **Tujuan**: Direktori kerja default untuk meletakkan file foto/vektor (`.jpg`, `.jpeg`, `.png`, `.svg`, `.eps`, dll.) yang akan dibaca, diubah metadatanya, diekspor, atau diganti namanya secara batch.
 - **Aturan**:
   - Semua perintah otomatis (`npm start`, `node index.js auto`) secara default akan mencari dan memproses berkas gambar di dalam folder `foto/`.
   - Web UI secara otomatis memindai `foto/` dan subfolder di dalamnya sebagai target operasi.
@@ -65,20 +66,22 @@ METADATA/
 - **`src/server.js`**: HTTP Server murni Node.js tanpa Express/framework eksternal, menyediakan REST API untuk folder, file gambar, thumbnail stream (`image/svg+xml`, JPEG, PNG), inspeksi metadata detail, konfigurasi parameter vektor, CRUD SQLite, dan simulasi pratinjau rename.
 - **`src/vector.js`**: Engine tracing raster-ke-vektor SVG menggunakan library WebAssembly `@visioncortex/vtracer`. Mendukung profil kurasi microstock (`microstock`, `flat`, `pixel`, `photo`, `bw`), struktur layer `cutout` tanpa tumpukan kurva ganda, simplifikasi node (anchor points), filter speckle, dan penyematan metadata Dublin Core / Adobe XMP otomatis.
 - **`src/svg.js`**: Parser metadata SVG murni zero-dependency. Mengekstrak dimensi fisik (`width`, `height`, `viewBox`), software generator, serta tag standar `<title>`, `<desc>`, dan Dublin Core `<metadata><rdf:RDF>` (`dc:title`, `dc:description`, `dc:creator`, `dc:subject` keywords).
-- **`src/jpeg.js` & `src/png.js`**: Parser biner struktur JPEG (segmen SOI, APP1, APP13, SOF, EOI) dan PNG (chunk IHDR, eXIf, iTXt, IEND dengan CRC32 manual).
+- **`src/eps.js`**: Parser metadata berkas vektor EPS zero-dependency. Mendukung format ASCII EPS (`%!PS-Adobe`) dan Binary DOS EPS (header 30-byte `0xC5D0D3C6`), mengekstrak DSC Comments (`%%Title:`, `%%Creator:`, `%%For:`, `%%CreationDate:`, `%%BoundingBox:`), dan paket Adobe XMP Dublin Core.
+- **`src/image.js`**: Engine decoding PNG murni (RGBA, RGB, Grayscale, un-filtering scanline) & fast AAN FDCT JPEG encoder berkecepatan tinggi dengan injeksi metadata EXIF/IPTC/XMP tanpa dependensi eksternal.
+- **`src/jpeg.js` & `src/png.js`**: Parser biner struktur JPEG (segmen SOI, APP1, APP13, SOF, EOI) dan PNG (chunk IHDR, eXIf, tEXt, zTXt, iTXt dengan kompresi `node:zlib`, dan IEND dengan CRC32 manual).
 - **`src/exif.js` & `src/iptc.js`**: Jantung logika metadata TIFF/EXIF dan IPTC IIM Photoshop 3.0 8BIM. Menjaga endianness (`II`/`MM`), tag sorting IFD, thumbnail IFD1, dan encoding karakter UTF-8.
-- **`src/meta.js`**: Lapisan integrasi yang menyatukan pembacaan EXIF, IPTC, Adobe XMP Dublin Core (`<dc:subject>`, `<dc:title>`), dan berkas SVG agar kompatibel 100% dengan Microstock (Adobe Stock, Shutterstock, Freepik).
+- **`src/meta.js`**: Lapisan integrasi yang menyatukan pembacaan EXIF, IPTC, Adobe XMP Dublin Core (`<dc:subject>`, `<dc:title>`), berkas SVG, dan EPS agar kompatibel 100% dengan Microstock (Adobe Stock, Shutterstock, Freepik).
 - **`src/rename.js`**: Mesin pengganti nama berkas batch dengan template token (`{title}`, `{date}`, `{seq:3}`, `{artist}`, `{make}`, `{software}`, dll.) menggunakan strategi *Two-Pass Rename* anti-bentrok.
 - **`src/utils.js`**: Utilitas format biner, sanitasi karakter nama Windows (`< > : " / \ | ? *`), pencatatan log kegagalan ke `imgmeta.log`, dan pengelompokan kata kunci.
 - **`src/tinyjpeg.js`**: Generator berkas JPEG 8x8 sintetis dalam memori yang digunakan khusus untuk keperluan pengujian internal.
 
 ### `public/` — Antarmuka Pengguna Web (Industrial Minimalism)
-- **`index.html`**: Halaman tunggal interaktif yang memuat panel folder target, editor grid SQLite, modal parameter vektor, tombol ekspor cepat JPEG & Vektor SVG, editor teks judul & kata kunci, kontrol eksekusi, pratinjau pemetaan live, modal inspeksi EXIF/GPS/Metadata SVG, dan konsol log aktivitas.
+- **`index.html`**: Halaman tunggal interaktif yang memuat panel folder target, editor grid SQLite, modal parameter vektor, tombol ekspor cepat JPEG & Vektor SVG, editor teks judul & kata kunci, kontrol eksekusi, pratinjau pemetaan live, modal inspeksi EXIF/GPS/Metadata SVG/EPS, dan konsol log aktivitas.
 - **`style.css`**: Sistem desain *Industrial Minimalism* dengan palet warna monokrom hangat (*stone*), kontras tinggi, batas sudut tajam (*sharp edges*), dan tipografi teknis (*IBM Plex Mono* & *Inter*).
 - **`app.js`**: Logika interaktif sisi peramban yang menangani komunikasi AJAX REST API, modal pengaturan parameter vektor dengan live badge dan sinkronisasi `localStorage`, live preview real-time dengan debounce, manipulasi inline tabel SQLite, penyalinan teks sekali klik, dan rendering modal.
 
 ### `test/` — Unit Testing & Selftest
-- **`selftest.js`**: Rangkaian pengujian terintegrasi tanpa dependensi (dipanggil via `npm run selftest` atau `node index.js selftest`) yang menguji parsing JPEG, PNG, EXIF round-trip, IPTC 8BIM, XMP fallback, konversi vektor SVG `@visioncortex/vtracer`, pembacaan metadata SVG murni, penamaan template, penanganan bentrok nama, dan operasi database SQLite (total 105 skenario pengujian).
+- **`selftest.js`**: Rangkaian pengujian terintegrasi tanpa dependensi (dipanggil via `npm run selftest` atau `node index.js selftest`) yang menguji parsing JPEG, PNG (termasuk zTXt/iTXt), EXIF round-trip, IPTC 8BIM, XMP fallback, konversi vektor SVG `@visioncortex/vtracer`, pembacaan metadata SVG murni, parser EPS ASCII & Binary DOS, penamaan template, penanganan bentrok nama, dan operasi database SQLite (total 133 skenario pengujian).
 
 ### `graphify-out/` — Knowledge Graph Arsitektur
 - Dihasilkan oleh pipeline visualisasi `/graphify` untuk menganalisis relasi modul, dependensi fungsi, dan god nodes dalam codebase.

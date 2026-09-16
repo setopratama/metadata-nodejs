@@ -1,10 +1,11 @@
-// Parser & manipulasi struktur chunk PNG (eXIf, iTXt, tEXt, IHDR).
-// Murni JavaScript, tanpa dependensi eksternal.
+// Parser & manipulasi struktur chunk PNG (eXIf, iTXt, tEXt, zTXt, IHDR).
+// Murni Node.js standar (menggunakan node:zlib bawaan), tanpa dependensi eksternal.
+import zlib from "node:zlib";
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 export function isPng(buf) {
-  return buf.length >= 8 && buf.subarray(0, 8).equals(PNG_SIGNATURE);
+  return buf && buf.length >= 8 && buf.subarray(0, 8).equals(PNG_SIGNATURE);
 }
 
 // Algoritma CRC32 murni untuk chunk PNG
@@ -35,7 +36,7 @@ function calcCrc(typeBuf, dataBuf) {
  * Pindai chunk-chunk PNG.
  * @returns {object} { chunks, exif, text, dims }
  *  - exif: { offset, total, payloadStart, payloadLen } dari chunk eXIf
- *  - text: array chunk text/iTXt { keyword, text }
+ *  - text: array chunk text/zTXt/iTXt { keyword, text }
  *  - dims: { w, h } dari IHDR
  */
 export function parsePng(buf) {
@@ -70,6 +71,7 @@ export function parsePng(buf) {
       exif = { offset: off, total, payloadStart, payloadLen };
     }
 
+    // tEXt: Keyword (Latin1, null-terminated) + Text (Latin1)
     if (type === "tEXt") {
       const payload = buf.subarray(payloadStart, payloadStart + payloadLen);
       const nullIdx = payload.indexOf(0);
@@ -81,22 +83,56 @@ export function parsePng(buf) {
       }
     }
 
+    // zTXt: Keyword (Latin1, null-terminated) + Compression method (1B) + Compressed text (zlib)
+    if (type === "zTXt") {
+      const payload = buf.subarray(payloadStart, payloadStart + payloadLen);
+      const nullIdx = payload.indexOf(0);
+      if (nullIdx > 0 && nullIdx + 2 <= payload.length) {
+        const keyword = payload.subarray(0, nullIdx).toString("latin1");
+        const compMethod = payload[nullIdx + 1];
+        if (compMethod === 0) {
+          try {
+            const decompressed = zlib.inflateSync(payload.subarray(nullIdx + 2));
+            text.push({
+              keyword,
+              text: decompressed.toString("utf8"),
+            });
+          } catch {
+            // Jika gagal didekompresi sebagai utf8, coba latin1
+            try {
+              const decompressed = zlib.inflateSync(payload.subarray(nullIdx + 2));
+              text.push({
+                keyword,
+                text: decompressed.toString("latin1"),
+              });
+            } catch {}
+          }
+        }
+      }
+    }
+
+    // iTXt: Keyword + null + compFlag (1B) + compMethod (1B) + langTag + null + transKeyword + null + text (UTF-8)
     if (type === "iTXt") {
       const payload = buf.subarray(payloadStart, payloadStart + payloadLen);
       const null1 = payload.indexOf(0);
       if (null1 > 0 && null1 + 2 < payload.length) {
         const compFlag = payload[null1 + 1];
-        if (compFlag === 0) { // uncompressed text
-          const keyword = payload.subarray(0, null1).toString("utf8");
-          let p = null1 + 3; // skip compFlag & compMethod
-          const null2 = payload.indexOf(0, p);
-          if (null2 >= p) {
-            p = null2 + 1; // skip langTag
-            const null3 = payload.indexOf(0, p);
-            if (null3 >= p) {
-              p = null3 + 1; // skip transKeyword
-              const txtBuf = payload.subarray(p);
-              text.push({ keyword, text: txtBuf.toString("utf8") });
+        const keyword = payload.subarray(0, null1).toString("utf8");
+        let p = null1 + 3; // skip compFlag & compMethod
+        const null2 = payload.indexOf(0, p);
+        if (null2 >= p) {
+          p = null2 + 1; // skip langTag
+          const null3 = payload.indexOf(0, p);
+          if (null3 >= p) {
+            p = null3 + 1; // skip transKeyword
+            const rawTextBuf = payload.subarray(p);
+            if (compFlag === 0) {
+              text.push({ keyword, text: rawTextBuf.toString("utf8") });
+            } else if (compFlag === 1) {
+              try {
+                const decompressed = zlib.inflateSync(rawTextBuf);
+                text.push({ keyword, text: decompressed.toString("utf8") });
+              } catch {}
             }
           }
         }
@@ -162,7 +198,7 @@ export function buildItxtChunk(keyword, text) {
 /** Sisipkan atau perbarui chunk iTXt untuk metadata teks (Title, Description, Keywords, Author). */
 export function updatePngTextChunks(buf, textEntries) {
   const parsed = parsePng(buf);
-  const keysToUpdate = new Set(["Title", "Description", "Caption", "Keywords", "Author", "Artist", "Comment"]);
+  const keysToUpdate = new Set(["title", "description", "caption", "keywords", "author", "artist", "comment"]);
 
   const newChunks = [];
   if (textEntries.title) newChunks.push(buildItxtChunk("Title", textEntries.title));
@@ -182,11 +218,11 @@ export function updatePngTextChunks(buf, textEntries) {
   const afterIhdr = [];
   for (const c of parsed.chunks) {
     if (c.type === "IHDR") continue;
-    if (c.type === "tEXt" || c.type === "iTXt") {
+    if (c.type === "tEXt" || c.type === "iTXt" || c.type === "zTXt") {
       const payload = buf.subarray(c.payloadStart, c.payloadStart + c.payloadLen);
       const nullIdx = payload.indexOf(0);
       if (nullIdx > 0) {
-        const kw = payload.subarray(0, nullIdx).toString("utf8");
+        const kw = payload.subarray(0, nullIdx).toString("utf8").toLowerCase();
         if (keysToUpdate.has(kw)) continue;
       }
     }
@@ -219,7 +255,7 @@ export function insertPngXmp(buf, xmpXmlString) {
   const keepChunks = [];
   for (const c of parsed.chunks) {
     if (c.type === "IHDR") continue;
-    if (c.type === "iTXt" || c.type === "tEXt") {
+    if (c.type === "iTXt" || c.type === "tEXt" || c.type === "zTXt") {
       const payload = buf.subarray(c.payloadStart, c.payloadStart + c.payloadLen);
       const nullIdx = payload.indexOf(0);
       if (nullIdx > 0) {
@@ -242,4 +278,31 @@ export function removeExif(buf) {
     buf.subarray(0, parsed.exif.offset),
     buf.subarray(parsed.exif.offset + parsed.exif.total),
   ]);
+}
+
+/**
+ * Hapus seluruh chunk metadata privasi dari PNG (eXIf, tEXt, zTXt, iTXt).
+ * Mempertahankan chunk gambar esensial (IHDR, PLTE, IDAT, IEND, dll.).
+ */
+export function removePngMetadata(buf) {
+  const parsed = parsePng(buf);
+  const metaTypes = new Set(["eXIf", "tEXt", "zTXt", "iTXt"]);
+  let hasMeta = false;
+
+  for (const c of parsed.chunks) {
+    if (metaTypes.has(c.type)) {
+      hasMeta = true;
+      break;
+    }
+  }
+  if (!hasMeta) return null;
+
+  const keep = [buf.subarray(0, 8)]; // PNG Signature
+  for (const c of parsed.chunks) {
+    if (!metaTypes.has(c.type)) {
+      keep.push(buf.subarray(c.offset, c.offset + c.total));
+    }
+  }
+
+  return Buffer.concat(keep);
 }

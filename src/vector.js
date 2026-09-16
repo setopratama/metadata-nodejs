@@ -290,17 +290,21 @@ export function exportFileToVector(srcFile, destFile, options = {}) {
 
   try {
     const srcMeta = meta.readFileMeta(srcFile);
-    if (!inheritedTitle && srcMeta.view && srcMeta.view.title) {
-      inheritedTitle = srcMeta.view.title;
+    const view = (srcMeta.model || srcMeta.iptc || srcMeta.xmp || srcMeta.text || srcMeta.svgMeta || srcMeta.epsMeta)
+      ? meta.buildExifView(srcMeta.model, srcMeta.dims, srcMeta.iptc, srcMeta.xmp, srcMeta.text, srcMeta.svgMeta, srcMeta.epsMeta)
+      : null;
+
+    if (!inheritedTitle && view && view.title) {
+      inheritedTitle = view.title;
     }
-    if ((!inheritedKeywords || (Array.isArray(inheritedKeywords) && !inheritedKeywords.length)) && srcMeta.view && srcMeta.view.keywords) {
-      inheritedKeywords = srcMeta.view.keywords;
+    if ((!inheritedKeywords || (Array.isArray(inheritedKeywords) && !inheritedKeywords.length)) && view && view.keywords && view.keywords.length) {
+      inheritedKeywords = view.keywords;
     }
-    if (!inheritedCaption && srcMeta.view) {
-      inheritedCaption = srcMeta.view.caption || srcMeta.view.description || inheritedTitle;
+    if (!inheritedCaption && view) {
+      inheritedCaption = view.caption || view.description || inheritedTitle;
     }
-    if (!inheritedAuthor && srcMeta.view) {
-      inheritedAuthor = srcMeta.view.artist || srcMeta.view.author;
+    if (!inheritedAuthor && view) {
+      inheritedAuthor = view.author || view.artist;
     }
   } catch {
     // Abaikan jika bukan gambar JPEG/PNG yang memiliki EXIF/IPTC terstruktur

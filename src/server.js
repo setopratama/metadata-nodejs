@@ -94,7 +94,7 @@ function findImageFolders(baseDir = ROOT_DIR) {
         subdirs.push(path.join(dir, ent.name));
       } else if (ent.isFile()) {
         const ext = path.extname(ent.name).toLowerCase();
-        if ([".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff"].includes(ext)) {
+        if ([".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".svg", ".eps"].includes(ext)) {
           hasImages = true;
         }
       }
@@ -234,8 +234,8 @@ async function handleRequest(req, res) {
           let view = null;
           try {
             r = meta.readFileMeta(fullPath);
-            if (r.model || r.iptc || r.xmp || r.text || r.svgMeta) {
-              view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta);
+            if (r && (r.model || r.iptc || r.xmp || r.text || r.svgMeta || r.epsMeta)) {
+              view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta, r.epsMeta);
             }
           } catch {}
 
@@ -250,6 +250,7 @@ async function handleRequest(req, res) {
             isJpeg: r ? r.isJpeg : false,
             isPng: r ? r.isPng : false,
             isSvg: r ? r.isSvg : false,
+            isEps: r ? r.isEps : false,
             title: view && view.title ? view.title : "",
             caption: view && view.caption ? view.caption : "",
             description: view && view.description ? view.description : "",
@@ -298,8 +299,8 @@ async function handleRequest(req, res) {
         let view = null;
         try {
           r = meta.readFileMeta(fullPath);
-          if (r.model || r.iptc || r.xmp || r.text || r.svgMeta) {
-            view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta);
+          if (r && (r.model || r.iptc || r.xmp || r.text || r.svgMeta || r.epsMeta)) {
+            view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta, r.epsMeta);
           }
         } catch (err) {
           return sendJson(res, 500, { success: false, error: "Gagal membaca metadata: " + err.message });
@@ -321,6 +322,7 @@ async function handleRequest(req, res) {
             isJpeg: r.isJpeg,
             isPng: r.isPng,
             isSvg: r.isSvg,
+            isEps: r.isEps,
             exifPresent: r.exifPresent,
           },
           metadata: view || {},
@@ -481,7 +483,7 @@ async function handleRequest(req, res) {
             plannedName,
             isNameChanged,
             currentTitle: (view && view.title) || "-",
-            mappedTitle: mappedTitle || "(tidak ada)",
+            mappedTitle: mappedTitle || "",
             hasTitle: Boolean(mappedTitle),
             currentKeywordsCount: view && view.keywords ? view.keywords.length : 0,
             mappedKeywords: mappedKeywords,
@@ -735,8 +737,19 @@ async function handleRequest(req, res) {
               }
             }
 
+            if (typeof mappedTitle === "string") {
+              const trimmed = mappedTitle.trim();
+              if (!trimmed || trimmed === "(tidak ada)" || trimmed === "(belum ada judul)" || trimmed === "-") {
+                mappedTitle = undefined;
+              } else {
+                mappedTitle = trimmed;
+              }
+            }
+
             const targetDir = outDir ? path.resolve(ROOT_DIR, outDir) : path.dirname(filePath);
-            const destName = (mappedTitle ? utils.sanitizeName(mappedTitle) : baseName) + ".jpg";
+            const sanitizedTitle = mappedTitle ? utils.sanitizeName(mappedTitle) : "";
+            const destBase = (sanitizedTitle && sanitizedTitle !== "file") ? sanitizedTitle : baseName;
+            const destName = destBase + ".jpg";
             const destPath = path.join(targetDir, destName);
 
             const exportOpts = {
@@ -879,8 +892,19 @@ async function handleRequest(req, res) {
               }
             }
 
+            if (typeof mappedTitle === "string") {
+              const trimmed = mappedTitle.trim();
+              if (!trimmed || trimmed === "(tidak ada)" || trimmed === "(belum ada judul)" || trimmed === "-") {
+                mappedTitle = undefined;
+              } else {
+                mappedTitle = trimmed;
+              }
+            }
+
             const targetDir = outDir ? path.resolve(ROOT_DIR, outDir) : path.dirname(filePath);
-            const destName = (mappedTitle ? utils.sanitizeName(mappedTitle) : baseName) + ".svg";
+            const sanitizedTitle = mappedTitle ? utils.sanitizeName(mappedTitle) : "";
+            const destBase = (sanitizedTitle && sanitizedTitle !== "file") ? sanitizedTitle : baseName;
+            const destName = destBase + ".svg";
             const destPath = path.join(targetDir, destName);
 
             const exportOpts = {

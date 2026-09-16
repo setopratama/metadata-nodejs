@@ -1067,8 +1067,8 @@ document.addEventListener("DOMContentLoaded", () => {
         btnModalExportVector.disabled = false;
         btnModalExportVector.textContent = "📐 EXPORT FOTO INI KE VEKTOR SVG";
       }
-      if (modalVectorPreset && vectorPresetSelect) {
-        modalVectorPreset.value = vectorPresetSelect.value || "poster";
+      if (modalVectorPreset) {
+        modalVectorPreset.value = (vectorProfileSelect && vectorProfileSelect.value) || (currentVectorSettings && currentVectorSettings.profile) || "microstock";
       }
 
       const res = await fetch(`/api/meta-detail?file=${encodeURIComponent(filePath)}`);
@@ -1095,8 +1095,8 @@ document.addEventListener("DOMContentLoaded", () => {
     modalFileName.textContent = file.name || "-";
     modalDims.textContent = file.dims || "-";
     modalSize.textContent = file.sizeFmt || "-";
-    modalFormat.textContent = file.isJpeg ? "JPEG (.jpg)" : file.isPng ? "PNG (.png)" : file.isSvg ? "SVG (.svg)" : "Gambar";
-    modalExifStatus.textContent = file.exifPresent ? "TERSEDIA (EXIF)" : file.isSvg ? "XML METADATA" : "TIDAK ADA EXIF";
+    modalFormat.textContent = file.isJpeg ? "JPEG (.jpg)" : file.isPng ? "PNG (.png)" : file.isSvg ? "SVG (.svg)" : file.isEps ? "EPS (.eps)" : "Gambar";
+    modalExifStatus.textContent = file.exifPresent ? "TERSEDIA (EXIF)" : file.isSvg ? "XML METADATA" : file.isEps ? "DSC/XMP METADATA" : "TIDAK ADA EXIF";
 
     // Target Rename
     if (modalTargetRenameBox) {
@@ -1246,7 +1246,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const fileName = currentModalData.file.name || "Foto";
       const quality = modalExportQuality ? parseInt(modalExportQuality.value, 10) || 90 : 90;
 
-      const titleToUse = currentModalData.mappedTitle || (currentModalData.metadata && (currentModalData.metadata.title || currentModalData.metadata.description)) || "";
+      const rawTitle = currentModalData.mappedTitle || (currentModalData.metadata && (currentModalData.metadata.title || currentModalData.metadata.description)) || "";
+      const titleToUse = (typeof rawTitle === "string" && rawTitle.trim() && rawTitle !== "-" && rawTitle !== "(tidak ada)" && rawTitle !== "(belum ada judul)") ? rawTitle.trim() : "";
       const keywordsToUse = (currentModalData.mappedKeywords && currentModalData.mappedKeywords.length)
         ? currentModalData.mappedKeywords
         : (currentModalData.metadata && currentModalData.metadata.keywords) || [];
@@ -1335,6 +1336,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       log(`[VECTOR] Mengekspor foto individual: ${fileName} ke Vektor SVG (Profil: ${chosenProfile})...`, "info");
+
+      const rawTitle = currentModalData.mappedTitle || (currentModalData.metadata && (currentModalData.metadata.title || currentModalData.metadata.description)) || "";
+      const titleToUse = (typeof rawTitle === "string" && rawTitle.trim() && rawTitle !== "-" && rawTitle !== "(tidak ada)" && rawTitle !== "(belum ada judul)") ? rawTitle.trim() : "";
+      const keywordsToUse = (currentModalData.mappedKeywords && currentModalData.mappedKeywords.length)
+        ? currentModalData.mappedKeywords
+        : (currentModalData.metadata && currentModalData.metadata.keywords) || [];
 
       try {
         const payload = {

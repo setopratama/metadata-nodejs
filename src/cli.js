@@ -137,8 +137,8 @@ function fmtGps(gps) {
 function printRead(file, r, view) {
   utils.info("");
   utils.info(utils.bold(file));
-  if (!r.isJpeg && !r.isPng && !r.isSvg) {
-    utils.warn("Format tidak didukung (metadata hanya didukung untuk JPEG, PNG, dan SVG).");
+  if (!r.isJpeg && !r.isPng && !r.isSvg && !r.isEps) {
+    utils.warn("Format tidak didukung (metadata hanya didukung untuk JPEG, PNG, SVG, dan EPS).");
     return;
   }
   if (r.exifError) utils.warn("Gagal membaca sebagian EXIF: " + r.exifError);
@@ -146,11 +146,13 @@ function printRead(file, r, view) {
   const rows = [];
   if (r.isSvg) {
     rows.push(["Format", "SVG (Scalable Vector Graphics)"]);
+  } else if (r.isEps) {
+    rows.push(["Format", "EPS (Encapsulated PostScript)"]);
   }
   if (view) {
     const cam = [view.make, view.model].filter(Boolean).join(" ");
-    rows.push(["Kamera", cam || "-"]);
-    rows.push(["Lensa", view.lens || "-"]);
+    if (cam) rows.push(["Kamera", cam]);
+    if (view.lens) rows.push(["Lensa", view.lens]);
     rows.push(["Software", view.software || "-"]);
     rows.push(["Artis", view.artist || "-"]);
     rows.push(["Deskripsi", view.description || "-"]);
@@ -162,13 +164,14 @@ function printRead(file, r, view) {
     if (view.orientation) {
       rows.push(["Orientasi", view.orientation + " (" + (meta.ORIENTATION_LABELS[view.orientation] || "?") + ")"]);
     }
-    rows.push(["Eksposur", view.exposureTime ? fmtExposure(view.exposureTime) : "-"]);
-    rows.push(["Diafragma", view.fNumber ? "f/" + exifFmtRational(view.fNumber) : "-"]);
-    rows.push(["ISO", view.iso != null ? String(view.iso) : "-"]);
-    rows.push(["Panjang fokus", view.focalLength ? exifFmtRational(view.focalLength) + " mm" : "-"]);
-    rows.push(["GPS", fmtGps(view.gps)]);
+    if (view.exposureTime) rows.push(["Eksposur", fmtExposure(view.exposureTime)]);
+    if (view.fNumber) rows.push(["Diafragma", "f/" + exifFmtRational(view.fNumber)]);
+    if (view.iso != null) rows.push(["ISO", String(view.iso)]);
+    if (view.focalLength) rows.push(["Panjang fokus", exifFmtRational(view.focalLength) + " mm"]);
+    if (view.gps) rows.push(["GPS", fmtGps(view.gps)]);
+    if (view.dateTime) rows.push(["Tanggal", view.dateTime]);
   }
-  if (!r.exifPresent && !r.isSvg) rows.push(["EXIF", "(tidak ada)"]);
+  if (!r.exifPresent && !r.isSvg && !r.isEps) rows.push(["EXIF", "(tidak ada)"]);
   const dims = view && view.width ? view.width + " x " + view.height : r.dims ? r.dims.w + " x " + r.dims.h : "-";
   rows.push(["Dimensi", dims]);
   rows.push(["Ukuran file", utils.fmtBytes(r.size)]);
@@ -184,8 +187,8 @@ function cmdRead(files, opts) {
   const jsonOut = [];
   for (const f of list) {
     const r = meta.readFileMeta(f);
-    const view = r.model || r.iptc || r.xmp || r.text || r.svgMeta
-      ? meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta)
+    const view = r.model || r.iptc || r.xmp || r.text || r.svgMeta || r.epsMeta
+      ? meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta, r.epsMeta)
       : null;
     if (opts.json) {
       jsonOut.push({
@@ -193,6 +196,7 @@ function cmdRead(files, opts) {
         isJpeg: r.isJpeg,
         isPng: r.isPng,
         isSvg: r.isSvg,
+        isEps: r.isEps,
         dims: r.dims,
         exifPresent: r.exifPresent,
         metadata: view,

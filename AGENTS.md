@@ -2,29 +2,28 @@
 
 Panduan kerja untuk agen AI (dan kontributor) yang mengerjakan codebase **imgmeta**.
 
-## Ringkasan ProjectCLI Node.js **tanpa dependensi** untuk membaca/mengubah metadata foto
-(**EXIF**: kamera/tanggal/GPS; **IPTC**: judul/kata kunci/keterangan/penulis)
-pada JPEG dan mengganti nama file secara batch dengan template. Bahasa
-dokumentasi & komentar: **Indonesia**.
+## Ringkasan Project
 
-- Runtime: Node.js >= 16, `"type": "module"` (ESM murni).
-- **Aturan utama: JANGAN menambah dependensi eksternal.** Semua parser (JPEG, PNG, TIFF/EXIF)
-  ditulis manual — ini nilai jual utama project.
+CLI Node.js & Web UI **tanpa dependensi eksternal** (zero-dependency untuk seluruh parser/serializer inti) untuk membaca/mengubah metadata foto & vektor (**EXIF**: kamera/tanggal/GPS; **IPTC**: judul/kata kunci/keterangan/penulis; **Adobe XMP / Dublin Core**: `<dc:subject>`, `<dc:title>`, `<dc:creator>`; **SVG/EPS**: BoundingBox, DSC comments, generator software) pada JPEG, PNG, SVG, dan EPS, serta mengganti nama file secara batch dengan template cerdas dan mengekspor gambar ke JPEG/Vektor SVG. Bahasa dokumentasi & komentar: **Indonesia**.
+
+- Runtime: Node.js >= 16 (direkomendasikan >= 22 untuk modul `node:sqlite`), `"type": "module"` (ESM murni).
+- **Aturan utama: JANGAN menambah dependensi runtime eksternal.** Semua parser & serializer (JPEG, PNG, TIFF/EXIF, IPTC IIM, Adobe XMP, SVG, EPS, CRC32, AAN FDCT JPEG encoder) ditulis manual murni Node.js standard library — ini nilai jual utama project. Tracing vektor menggunakan `@visioncortex/vtracer` WebAssembly.
 - **Aturan Git: JANGAN melakukan `git add`, `git commit`, maupun `git push` tanpa seizin/persetujuan langsung dari owner.**
-- EXIF didukung untuk **JPEG** (`.jpg`/`.jpeg`) dan **PNG** (`.png`). File gambar lain tetap bisa di-rename.
-- **Folder kerja foto** berada di `foto/` (root project) — letakkan foto yang akan
-  diproses di sana. Contoh perintah di bawah memakai `foto/*.jpg`.
+- Format didukung: **JPEG** (`.jpg`/`.jpeg`), **PNG** (`.png`), **SVG** (`.svg`), **EPS** (`.eps`). File gambar lain tetap bisa di-rename.
+- **Folder kerja foto** berada di `foto/` (root project) — letakkan foto/vektor yang akan diproses di sana. Contoh perintah di bawah memakai `foto/*.jpg`.
 
 ## Perintah Penting
 
 ```bash
-npm start                         # 1 langkah: terapkan metadata SQLite (preset default) + rename ke judul
-npm run web                       # jalankan antarmuka grafis Web UI di http://localhost:3000
-node index.js --help              # semua perintah & opsi
-node index.js selftest            # pengujian internal (round-trip EXIF, IPTC, XMP, PNG, SQLite, template)
-node index.js read "foto/*.jpg"   # baca metadata semua foto di folder kerja foto/
-node index.js db list             # tampilkan daftar preset SQLite
-node index.js rename "foto/*.jpg" --template "{title}" [--preset default] --apply # rename batch
+npm start                                # 1 langkah: terapkan metadata SQLite (preset default) + rename ke judul
+npm run web                              # jalankan antarmuka grafis Web UI di http://localhost:3000
+npm run selftest                         # pengujian internal (round-trip EXIF, IPTC, XMP, PNG, SVG, EPS, SQLite, template)
+node index.js --help                     # semua perintah & opsi
+node index.js read "foto/*.*"            # baca metadata foto/vektor di folder kerja foto/
+node index.js db list                    # tampilkan daftar preset SQLite
+node index.js rename "foto/*.*" --template "{title}" [--preset default] --apply # rename batch
+node index.js export-jpeg "foto/*.png"   # konversi PNG ke JPEG microstock-ready dengan Fast AAN FDCT
+node index.js export-vector "foto/*.png" # tracing raster ke vektor SVG dengan kurasi microstock
 ```
 
 `npm run selftest` setara dengan `node index.js selftest`.
@@ -35,16 +34,20 @@ node index.js rename "foto/*.jpg" --template "{title}" [--preset default] --appl
 index.js            Entry point (jalankan run(process.argv.slice(2)))
 imgmeta.cmd         Peluncur Windows
 imgmeta.db          Database SQLite lokal (presets, items, history, templates)
-foto/               Folder kerja: tempat foto yang akan diproses
+foto/               Folder kerja: tempat foto/vektor yang akan diproses
 docs/               Dokumentasi teknis & arsitektur (STRUKTUR_FOLDER.md, ANALISA.md, CHANGELOG.md)
 src/
-  cli.js            Parsing argumen (parseArgs) + perintah: web/auto/read/edit/apply/db/strip/rename
+  cli.js            Parsing argumen (parseArgs) + perintah: web/auto/export-vector/export-jpeg/read/edit/apply/db/strip/rename
   db.js             Database SQLite bawaan Node.js (node:sqlite) — presets, items, history, templates
   server.js         HTTP server murni Node.js (REST API & static files untuk Web UI)
+  vector.js         Engine tracing raster-ke-vektor SVG (@visioncortex/vtracer WASM) & profil kurasi microstock
+  svg.js            Parser metadata berkas vektor SVG zero-dependency (XML entity, dimensions, Dublin Core)
+  eps.js            Parser metadata berkas vektor EPS zero-dependency (ASCII & Binary DOS EPS, DSC, BoundingBox, XMP)
+  image.js          Engine konversi PNG->JPEG & Fast AAN FDCT JPEG encoder zero-dependency
   jpeg.js           Parser struktur JPEG: segmen, APP1 "Exif\0\0", APP13 "Photoshop 3.0",
                     XMP, dimensi SOF; insertExif/removeExif, insertIptc/removeIptc, removeXmp
-  png.js            Parser & serializer chunk PNG: eXIf (EXIF), tEXt/iTXt, IHDR (dimensi),
-                    CRC32 manual; insertExif/removeExif
+  png.js            Parser & serializer chunk PNG: eXIf (EXIF), tEXt/zTXt/iTXt (kompresi zlib), IHDR (dimensi),
+                    CRC32 manual; insertExif/removeExif, removePngMetadata
   exif.js           Parser & serializer TIFF/EXIF: IFD0, ExifIFD, GPS IFD, Interop,
                     IFD1 + thumbnail. Jantung logika metadata.
   iptc.js           Parser & serializer IPTC IIM di segmen APP13 "Photoshop 3.0":
@@ -60,8 +63,7 @@ test/
   selftest.js       Pengujian round-trip; dipanggil lewat perintah "selftest"
 ```
 
-Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js`). `rename.js` memakai
-`meta.js` untuk membaca EXIF per file. Tidak ada siklus import.
+Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js` + `png.js` + `svg.js` + `eps.js`). `rename.js` memakai `meta.js` untuk membaca EXIF/metadata per file. Tidak ada siklus import.
 
 ## Invariant yang HARUS Dijaga (jangan dilanggar saat mengubah kode)
 
@@ -98,10 +100,13 @@ Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js`). `rename.js` 
    - Menghapus field: `--title ""` / `--keywords ""` menghapus field tersebut.
      Bila SEMUA field IPTC/EXIF kosong dan tidak ada resource lain, `buildIptcApp13`
      mengembalikan null dan `editFile` membuang segmen APP13 serta tag terkait.
-4c. **`strip` menghapus EXIF (APP1) + IPTC (APP13 Photoshop) + XMP (APP1)** —
+4c. **`strip` menghapus EXIF (APP1) + IPTC (APP13 Photoshop) + XMP (APP1) pada JPEG, dan eXIf + tEXt + zTXt + iTXt pada PNG** —
    tujuan utamanya privasi. Jangan mengurangi cakupan ini tanpa alasan kuat.
-   `removeExif`/`removeIptc`/`removeXmp` mengembalikan `null` bila segmen tidak ada.
-4d. **Format file daftar `apply` & `auto`**: `title.txt` satu judul per baris (baris kosong pemisah diabaikan lewat `parseTitles()`, helper privat di `src/cli.js`). `keyword.txt` mendukung satu kata kunci per baris maupun dipisahkan koma dalam satu baris, dengan **baris kosong sebagai pemisah kelompok** — kelompok ke-N ↔ foto ke-N; parser murni ada di `utils.parseKeywordGroups()`. Pemetaan file menggunakan `sortFilesByTitles()` agar judul yang sudah cocok dengan `title.txt` tetap terkunci di posisinya (mencegah foto tertukar saat generate ulang).
+   `removeExif`/`removeIptc`/`removeXmp` dan `removePngMetadata` mengembalikan `null` bila segmen/chunk tidak ada.
+4d. **Format Vektor SVG & EPS**:
+   - SVG (`src/svg.js`): parsing dimensi fisik/viewBox, tag `<title>`, `<desc>`, generator comment, dan metadata Dublin Core RDF (`dc:title`, `dc:subject`, `dc:creator`, `dc:description`) secara zero-dependency.
+   - EPS (`src/eps.js`): parsing format ASCII EPS (`%!PS-Adobe`) dan Binary DOS EPS (`0xC5D0D3C6`), DSC Comments (`%%Title:`, `%%Creator:`, `%%For:`, `%%CreationDate:`, `%%BoundingBox:`), dan embedded Adobe XMP Dublin Core.
+4e. **Format file daftar `apply` & `auto`**: `title.txt` satu judul per baris (baris kosong pemisah diabaikan lewat `parseTitles()`, helper privat di `src/cli.js`). `keyword.txt` mendukung satu kata kunci per baris maupun dipisahkan koma dalam satu baris, dengan **baris kosong sebagai pemisah kelompok** — kelompok ke-N ↔ foto ke-N; parser murni ada di `utils.parseKeywordGroups()`. Pemetaan file menggunakan `sortFilesByTitles()` agar judul yang sudah cocok dengan `title.txt` tetap terkunci di posisinya (mencegah foto tertukar saat generate ulang).
    - **Jumlah baris/kelompok TIDAK wajib sama dengan jumlah foto** — ini
      disengaja, bukan bug: daftar lebih pendek → file sisanya dilewati dengan
      peringatan (dihitung "dilewati" di ringkasan; sebuah file baru dilewati
@@ -111,12 +116,11 @@ Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js`). `rename.js` 
      banyak dari jumlah file — kelebihan diabaikan.". Jangan mengubah perilaku
      ini menjadi error keras tanpa persetujuan pengguna.
 5. **Nama file Windows & Fallback Rename**: `sanitizeName()` membersihkan `< > : " / \ | ? *` dan
-   karakter kontrol, buang titik/spasi di akhir, batasi 180 karakter. `buildName()` menangani ekstensi secara terpisah, menerima parameter opsional `customTitle`, dan melakukan *fallback* ke nama asli (`parsed.name`) jika token template (seperti `{title}`) menghasilkan string kosong.
+   karakter kontrol, buang titik/spasi di akhir, batasi 180 karakter. `buildName()` menangani ekstensi secara terpisah, menerima parameter opsional `customTitle`, dan melakukan *fallback* ke nama asli (`parsed.name`) jika token template (seperti `{title}`) menghasilkan string kosong atau placeholder (`(tidak ada)`, `-`).
 6. **Anti-bentrok & Batch Rename**: `ensureUniqueTarget(target, planned, source, batchSources)` mengecek bentrok target batch dan file disk eksternal. File yang termasuk dalam daftar sumber batch (`batchSources`) dikecualikan dari pemeriksaan disk agar tidak terjadi bentrok palsu dengan nama file lama. Eksekusi rename batch (`runRename`) mendukung opsi `options.titles` (bisa diisi dari CLI `rename --titles <file>` atau form Web UI) dan menggunakan strategi *Two-Pass Rename* (menggunakan file sementara `.tmp_imgmeta_...`) agar penamaan ulang masal tidak saling mengunci atau menghasilkan akhiran `_1`. Jika terdapat bentrok nama target yang benar-benar ganda, penomoran unik menggunakan format ` (2)`, ` (3)` dst.
 7. **Dry-run rename**: `rename` TANPA `--apply` hanya menampilkan rencana, tidak
     mengubah apa pun.
-8. **Ekspansi file**: glob `* ?` didukung; argumen direktori dibaca isinya (hanya
-   ekstensi gambar); hasil di-`path.resolve` dan di-dedup. `isImageFilename()`
+8. **Ekspansi file**: glob `* ?` didukung; argumen direktori dibaca isinya (ekstensi `.jpg`, `.jpeg`, `.png`, `.svg`, `.eps`); hasil di-`path.resolve` dan di-dedup. `isImageFilename()`
    (helper privat di `src/rename.js`, bukan ekspor publik) juga mengenali nama
    file gambar hasil pemotongan ekstensi.
 
@@ -124,17 +128,16 @@ Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js`). `rename.js` 
 
 - ESM: `import fs from "node:fs"` / `export function ...`. Gunakan prefix `node:`.
 - Komentar dalam Bahasa Indonesia, singkat dan menjelaskan "mengapa" bila perlu.
-- Tanpa dependensi — jika butuh fitur, implementasikan manual (seperti pola
-  `tinyjpeg.js` untuk encoder uji).
+- Tanpa dependensi runtime tambahan — jika butuh fitur pemrosesan biner/teks, implementasikan manual.
 - Simbol `C`, `colorEnabled`, `p2`, `p4` di `utils.js` bersifat **privat modul**
   (sengaja tidak diekspor publik) — jangan dipanggil dari luar; pakai
   `green/yellow/...`, `setColor`, `pad`. Format rasional untuk tampilan ada di
   `cli.js` (`exifFmtRational`) — jangan menambahkan duplikat di `exif.js`
   (`fmtRational` sudah dihapus).
 - Error: CLI menangkap error di `run()` → `utils.err(e.message)` + `process.exitCode = 1`.
-  Perintah per-file (edit/strip) memakai try/catch di dalam loop agar satu file gagal
+  Perintah per-file (edit/strip/export) memakai try/catch di dalam loop agar satu file gagal
   tidak menghentikan batch.
-- **Log kegagalan**: setiap kegagalan (rename, edit/apply/auto, strip, ekspansi
+- **Log kegagalan**: setiap kegagalan (rename, edit/apply/auto/export, strip, ekspansi
   file, error global) dicatat ke `imgmeta.log` di cwd lewat
   `utils.logFailure(operation, file, message)` — format `[tanggal] [operasi] file — pesan`,
   mode append, tanpa dependensi. Panggil di setiap blok catch; jangan menghentikan
@@ -144,7 +147,7 @@ Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js`). `rename.js` 
   `printFailureSummary()` di akhir perintah (kecuali `--json`).
 - Output: `utils.info` (stdout), `utils.err` (stderr), `utils.warn`. Warna ANSI lewat
   `utils.green/yellow/...` — hormati `--no-color` / `NO_COLOR`.
-- Parser memakai `Buffer` subarray & `readUInt16LE/BE` — perhatikan endianness.
+- Parser memakai `Buffer` subarray & `readUInt16LE/BE` / `readUInt32LE/BE` — perhatikan endianness.
 
 ## Menambahkan Fitur — Pola yang Dipakai
 
@@ -167,9 +170,9 @@ Alur panggilan: `cli.js` → `meta.js` → (`exif.js` + `jpeg.js`). `rename.js` 
 
 ## Pengujian
 
-Sebelum menyelesaikan perubahan apa pun pada logika EXIF/rename:
+Sebelum menyelesaikan perubahan apa pun pada logika EXIF/rename/vector/image/eps:
 
-1. Jalankan `node index.js selftest` — harus lulus semua (pesan akhir
+1. Jalankan `npm run selftest` atau `node index.js selftest` — harus lulus semua (pesan akhir
    "Semua pengujian lulus").
 2. Jika environment tidak bisa menjalankan node, lakukan static review menyeluruh
    terhadap file yang diubah (syntax, invariant di atas, konsistensi import/export).
@@ -188,3 +191,4 @@ Sebelum menyelesaikan perubahan apa pun pada logika EXIF/rename:
   padahal `edit` harus mengganti segmen APP13 lama, dan hanya `strip` yang membuangnya.
 - Menganggap glob mendukung `**` — parser glob hanya `*` dan `?` di satu segmen nama.
 - Melakukan operasi Git (`git add`, `git commit`, `git push`) secara mandiri tanpa persetujuan eksplisit dari owner.
+
