@@ -415,6 +415,8 @@ async function handleRequest(req, res) {
           return sendJson(res, 403, { success: false, error: "Akses folder tidak valid." });
         }
 
+        const rawFiles = renameMod.expandFiles([targetDir]);
+
         const activePreset = preset || "default";
         const presetItems = db.getPresetItems(activePreset);
         let titles = [];
@@ -439,8 +441,8 @@ async function handleRequest(req, res) {
           let view = null;
           try {
             r = meta.readFileMeta(filePath);
-            if (r.model || r.iptc || r.xmp || r.text || r.svgMeta) {
-              view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta);
+            if (r.model || r.iptc || r.xmp || r.text || r.svgMeta || r.epsMeta) {
+              view = meta.buildExifView(r.model, r.dims, r.iptc, r.xmp, r.text, r.svgMeta, r.epsMeta);
             }
           } catch {}
 
@@ -468,6 +470,8 @@ async function handleRequest(req, res) {
               isPng: r ? r.isPng : false,
               isSvg: r ? r.isSvg : false,
               svgMeta: r ? r.svgMeta : null,
+              isEps: r ? r.isEps : false,
+              epsMeta: r ? r.epsMeta : null,
               mtime: r ? r.mtime : new Date(),
             });
           }

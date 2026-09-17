@@ -1042,6 +1042,29 @@ document.addEventListener("DOMContentLoaded", () => {
   // Fetch Live Preview
   async function fetchLivePreview() {
     try {
+      // Tampilkan indikator loading di tengah tabel & grid
+      previewTableBody.innerHTML = `
+        <tr>
+          <td colspan="7" class="loading-state">
+            <div class="table-loader">
+              <div class="table-loader-spinner"></div>
+              <div class="table-loader-title font-mono">MEMBACA FILE & METADATA...</div>
+              <div class="table-loader-sub font-mono">Memindai folder '${escapeHtml(currentFolder)}/' dan menghitung pemetaan...</div>
+            </div>
+          </td>
+        </tr>
+      `;
+      gridViewContainer.innerHTML = `
+        <div class="loading-state" style="grid-column: 1 / -1;">
+          <div class="table-loader">
+            <div class="table-loader-spinner"></div>
+            <div class="table-loader-title font-mono">MEMBACA FILE & METADATA...</div>
+            <div class="table-loader-sub font-mono">Memindai folder '${escapeHtml(currentFolder)}/' dan menghitung pemetaan...</div>
+          </div>
+        </div>
+      `;
+      mappingSummaryBadge.textContent = "MEMBACA...";
+
       const payload = {
         folder: currentFolder,
         preset: currentPreset,
@@ -1059,6 +1082,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await res.json();
       if (!data.success) {
         log("Preview error: " + (data.error || "Gagal"), "err");
+        previewTableBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="empty-state" style="color: var(--red-600);">
+              Gagal memuat pratinjau: ${escapeHtml(data.error || "Terjadi kesalahan")}
+            </td>
+          </tr>
+        `;
+        mappingSummaryBadge.textContent = "ERROR";
         return;
       }
 
@@ -1066,6 +1097,14 @@ document.addEventListener("DOMContentLoaded", () => {
       renderPreview(data);
     } catch (err) {
       log("Gagal mengambil live preview: " + err.message, "err");
+      previewTableBody.innerHTML = `
+        <tr>
+          <td colspan="7" class="empty-state" style="color: var(--red-600);">
+            Gagal mengambil data: ${escapeHtml(err.message)}
+          </td>
+        </tr>
+      `;
+      mappingSummaryBadge.textContent = "ERROR";
     }
   }
 
