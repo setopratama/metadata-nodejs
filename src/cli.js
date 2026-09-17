@@ -296,9 +296,13 @@ function readLines(filePath) {
   return fs.readFileSync(filePath, "utf8").split(/\r?\n/).map((s) => s.trim());
 }
 
-/** Filter judul non-kosong agar selaras dengan kelompok kata kunci. */
+/** Filter judul non-kosong agar selaras dengan kelompok kata kunci, mengabaikan header seksi (Titles/Judul/Keywords). */
 export function parseTitles(lines) {
-  return lines.map((s) => String(s).trim()).filter(Boolean);
+  const isHeaderLine = (s) => /^\s*\[?\s*(?:Titles?|Judul|Keywords?|Kata\s*Kunci|Tags?)\s*\]?:?\s*$/i.test(s);
+  return lines
+    .map((s) => String(s).trim())
+    .filter(Boolean)
+    .filter((s) => !isHeaderLine(s));
 }
 
 /**

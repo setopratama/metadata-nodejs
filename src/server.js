@@ -371,7 +371,7 @@ async function handleRequest(req, res) {
       // 5. POST /api/save-inputs
       if (pathname === "/api/save-inputs" && method === "POST") {
         const body = await readJsonBody(req);
-        const { titleText, keywordText, saveLocation = "root", folder = "foto", preset = "default" } = body;
+        const { titleText, keywordText, saveLocation = "root", folder = "foto", preset = "default", fileName } = body;
 
         // Simpan ke SQLite preset
         if (titleText !== undefined || keywordText !== undefined) {
@@ -387,6 +387,12 @@ async function handleRequest(req, res) {
         if (targetDir.startsWith(ROOT_DIR)) {
           if (titleText !== undefined) {
             fs.writeFileSync(path.join(targetDir, "title.txt"), titleText, "utf8");
+            if (fileName && typeof fileName === "string") {
+              const safeName = path.basename(fileName);
+              if (safeName.endsWith(".txt") || safeName.endsWith(".csv") || safeName.endsWith(".text")) {
+                fs.writeFileSync(path.join(targetDir, safeName), titleText, "utf8");
+              }
+            }
           }
           if (keywordText !== undefined) {
             fs.writeFileSync(path.join(targetDir, "keyword.txt"), keywordText, "utf8");
@@ -409,23 +415,20 @@ async function handleRequest(req, res) {
           return sendJson(res, 403, { success: false, error: "Akses folder tidak valid." });
         }
 
-        let effectiveTitleText = titleText;
-        let effectiveKeywordText = keywordText;
+        const activePreset = preset || "default";
+        const presetItems = db.getPresetItems(activePreset);
+        let titles = [];
+        let keywordGroups = [];
 
-        if (preset && (!titleText || !keywordText)) {
-          const items = db.getPresetItems(preset);
-          if (items.length) {
-            if (!effectiveTitleText) effectiveTitleText = items.map(it => it.title).join("\n");
-            if (!effectiveKeywordText) effectiveKeywordText = items.map(it => it.keywords.join(", ")).join("\n\n");
-          }
+        if (presetItems && presetItems.length > 0) {
+          titles = presetItems.map((it) => it.title).filter(Boolean);
+          keywordGroups = presetItems.map((it) => it.keywords);
+        } else {
+          const titleLines = (titleText || "").split(/\r?\n/);
+          titles = parseTitles(titleLines);
+          const keywordLines = (keywordText || "").split(/\r?\n/);
+          keywordGroups = utils.parseKeywordGroups(keywordLines);
         }
-
-        const rawFiles = renameMod.expandFiles([targetDir]);
-        const titleLines = effectiveTitleText.split(/\r?\n/);
-        const titles = parseTitles(titleLines);
-        
-        const keywordLines = effectiveKeywordText.split(/\r?\n/);
-        const keywordGroups = utils.parseKeywordGroups(keywordLines);
 
         const list = sortFilesByTitles(rawFiles, titles);
         const plannedNames = new Set();
@@ -540,21 +543,20 @@ async function handleRequest(req, res) {
           return sendJson(res, 400, { success: false, error: "Tidak ada file gambar di folder yang dipilih." });
         }
 
-        let effectiveTitleText = titleText;
-        let effectiveKeywordText = keywordText;
+        const activePreset = preset || "default";
+        const presetItems = db.getPresetItems(activePreset);
+        let titles = [];
+        let keywordGroups = [];
 
-        if (preset && (!titleText || !keywordText)) {
-          const items = db.getPresetItems(preset);
-          if (items.length) {
-            if (!effectiveTitleText) effectiveTitleText = items.map(it => it.title).join("\n");
-            if (!effectiveKeywordText) effectiveKeywordText = items.map(it => it.keywords.join(", ")).join("\n\n");
-          }
+        if (presetItems && presetItems.length > 0) {
+          titles = presetItems.map((it) => it.title).filter(Boolean);
+          keywordGroups = presetItems.map((it) => it.keywords);
+        } else {
+          const titleLines = (titleText || "").split(/\r?\n/);
+          titles = parseTitles(titleLines);
+          const keywordLines = (keywordText || "").split(/\r?\n/);
+          keywordGroups = utils.parseKeywordGroups(keywordLines);
         }
-
-        const titleLines = effectiveTitleText.split(/\r?\n/);
-        const titles = parseTitles(titleLines);
-        const keywordLines = effectiveKeywordText.split(/\r?\n/);
-        const keywordGroups = utils.parseKeywordGroups(keywordLines);
 
         const list = sortFilesByTitles(rawFiles, titles);
         const logs = [];
@@ -694,21 +696,20 @@ async function handleRequest(req, res) {
           return sendJson(res, 400, { success: false, error: "Tidak ada file gambar untuk diekspor ke JPEG." });
         }
 
-        let effectiveTitleText = titleText;
-        let effectiveKeywordText = keywordText;
+        const activePreset = preset || "default";
+        const presetItems = db.getPresetItems(activePreset);
+        let titles = [];
+        let keywordGroups = [];
 
-        if (preset && (!titleText || !keywordText)) {
-          const items = db.getPresetItems(preset);
-          if (items.length) {
-            if (!effectiveTitleText) effectiveTitleText = items.map((it) => it.title).join("\n");
-            if (!effectiveKeywordText) effectiveKeywordText = items.map((it) => it.keywords.join(", ")).join("\n\n");
-          }
+        if (presetItems && presetItems.length > 0) {
+          titles = presetItems.map((it) => it.title).filter(Boolean);
+          keywordGroups = presetItems.map((it) => it.keywords);
+        } else {
+          const titleLines = (titleText || "").split(/\r?\n/);
+          titles = parseTitles(titleLines);
+          const keywordLines = (keywordText || "").split(/\r?\n/);
+          keywordGroups = utils.parseKeywordGroups(keywordLines);
         }
-
-        const titleLines = effectiveTitleText.split(/\r?\n/);
-        const titles = parseTitles(titleLines);
-        const keywordLines = effectiveKeywordText.split(/\r?\n/);
-        const keywordGroups = utils.parseKeywordGroups(keywordLines);
 
         const list = isSingleTarget ? rawFiles : sortFilesByTitles(rawFiles, titles);
         const logs = [];
@@ -850,21 +851,20 @@ async function handleRequest(req, res) {
           return sendJson(res, 400, { success: false, error: "Tidak ada file gambar untuk diekspor ke Vektor SVG." });
         }
 
-        let effectiveTitleText = titleText;
-        let effectiveKeywordText = keywordText;
+        const activePreset = preset || "default";
+        const presetItems = db.getPresetItems(activePreset);
+        let titles = [];
+        let keywordGroups = [];
 
-        if (preset && (!titleText || !keywordText)) {
-          const items = db.getPresetItems(preset);
-          if (items.length) {
-            if (!effectiveTitleText) effectiveTitleText = items.map((it) => it.title).join("\n");
-            if (!effectiveKeywordText) effectiveKeywordText = items.map((it) => it.keywords.join(", ")).join("\n\n");
-          }
+        if (presetItems && presetItems.length > 0) {
+          titles = presetItems.map((it) => it.title).filter(Boolean);
+          keywordGroups = presetItems.map((it) => it.keywords);
+        } else {
+          const titleLines = (titleText || "").split(/\r?\n/);
+          titles = parseTitles(titleLines);
+          const keywordLines = (keywordText || "").split(/\r?\n/);
+          keywordGroups = utils.parseKeywordGroups(keywordLines);
         }
-
-        const titleLines = effectiveTitleText.split(/\r?\n/);
-        const titles = parseTitles(titleLines);
-        const keywordLines = effectiveKeywordText.split(/\r?\n/);
-        const keywordGroups = utils.parseKeywordGroups(keywordLines);
 
         const list = isSingleTarget ? rawFiles : sortFilesByTitles(rawFiles, titles);
         const logs = [];

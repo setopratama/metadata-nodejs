@@ -30,6 +30,9 @@
       </div>
     </header>
 
+    <!-- Global Floating Toast Element -->
+    <div id="globalToast" class="global-toast font-mono">✓ Notifikasi</div>
+
     <!-- Main Container Grid -->
     <main class="main-content">
       <!-- Left Panel: Folder Selection, Input Controls, and Actions -->
@@ -76,42 +79,26 @@
             </div>
 
             <div class="tab-group">
-              <button id="tabTitles" class="tab-btn active">TEKS JUDUL</button>
-              <button id="tabKeywords" class="tab-btn">TEKS KATA KUNCI</button>
+              <button id="tabTitles" class="tab-btn active">📝 TEKS METADATA</button>
               <button id="tabHistory" class="tab-btn">RIWAYAT</button>
               <button id="tabSqliteGrid" class="tab-btn" style="margin-left: auto;">📊 GRID SQLITE</button>
             </div>
           </div>
           <div class="card-body">
             
-            <!-- Pane 1: Titles -->
+            <!-- Pane 1: Combined Metadata Text Editor -->
             <div id="paneTitles" class="tab-pane active">
               <div class="pane-toolbar">
                 <div class="count-indicator font-mono">
-                  <span id="titleLineCount">0</span> BARIS TERDETEKSI
+                  <span id="titleLineCount">0</span> JUDUL • <span id="keywordGroupCount">0</span> KELOMPOK KATA KUNCI
                 </div>
                 <div class="toolbar-actions">
-                  <button id="btnLoadTitles" class="btn-xs btn-secondary">MUAT DARI FILE</button>
-                  <button id="btnSaveTitles" class="btn-xs btn-secondary">SIMPAN KE FILE/DB</button>
+                  <button id="btnImportFromText" class="btn-xs btn-primary" title="Impor data dari textarea ke SQLite">⬇️ IMPOR TEKS KE SQLITE</button>
+                  <button id="btnLoadTemplateSample" class="btn-xs btn-secondary" title="Isikan pola struktur template contoh">📄 ISI TEMPLATE</button>
                 </div>
               </div>
-              <p class="field-hint">1 baris = 1 judul foto ke-N (Title, Caption & Dublin Core XMP).</p>
-              <textarea id="titleInput" class="editor-textarea font-mono" placeholder="Masukkan 1 judul per baris...&#10;Contoh:&#10;Surreal melting watch icon black and white design&#10;Patriotic bald eagle flat vector illustration" spellcheck="false"></textarea>
-            </div>
-
-            <!-- Pane 2: Keywords -->
-            <div id="paneKeywords" class="tab-pane">
-              <div class="pane-toolbar">
-                <div class="count-indicator font-mono">
-                  <span id="keywordGroupCount">0</span> KELOMPOK (FOTO)
-                </div>
-                <div class="toolbar-actions">
-                  <button id="btnLoadKeywords" class="btn-xs btn-secondary">MUAT DARI FILE</button>
-                  <button id="btnSaveKeywords" class="btn-xs btn-secondary">SIMPAN KE FILE/DB</button>
-                </div>
-              </div>
-              <p class="field-hint">Daftar kata kunci per foto dipisahkan oleh <strong>baris kosong</strong>.</p>
-              <textarea id="keywordInput" class="editor-textarea font-mono" placeholder="Kelompok 1 (Foto 1):&#10;melting clock, surreal clock, dripping time, vector&#10;&#10;Kelompok 2 (Foto 2):&#10;bald eagle, patriotic america, vector illustration, flag" spellcheck="false"></textarea>
+              <p class="field-hint">Format template gabungan: <strong>Titles</strong> (1 judul per baris) lalu <strong>Keywords</strong> (1 kelompok kata kunci per foto dipisah koma/baris kosong).</p>
+              <textarea id="titleInput" class="editor-textarea font-mono" placeholder="Titles&#10;Depressed woman sitting on shower floor curled up in fetal position&#10;Patriotic bald eagle flat vector illustration&#10;&#10;Keywords&#10;hugging legs, nervous breakdown, running water, wet hair, shower cabin&#10;&#10;bald eagle, patriotic america, vector illustration, flag" spellcheck="false" style="min-height: 280px;"></textarea>
             </div>
 
             <!-- Pane 3: SQLite History -->
@@ -161,8 +148,7 @@
                 </table>
               </div>
               <div class="sqlite-grid-footer font-mono">
-                <button id="btnImportFromText" class="btn-xs btn-secondary">⬇️ IMPOR TEKS KE SQLITE</button>
-                <button id="btnExportToText" class="btn-xs btn-secondary">⬆️ EKSPOR SQLITE KE TEKS</button>
+                <button id="btnExportCombinedFile" class="btn-xs btn-secondary" title="Unduh 1 file .txt gabungan (Titles & Keywords)">📄 UNDUH 1 FILE (.TXT)</button>
               </div>
             </div>
 

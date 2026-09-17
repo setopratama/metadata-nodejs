@@ -294,6 +294,43 @@ export function runSelftest() {
   }, testDbPath);
   assert(imp.length === 2 && imp[1].title === "Judul 2" && imp[1].keywords[0] === "tag3", "importTextToPreset mode replace berhasil");
 
+  // Uji import/export format 1-file gabungan (Titles & Keywords)
+  const combinedSample = `Titles\nJudul Gabung 1\n\nJudul Gabung 2\n\nKeywords\ntagA, tagB\n\ntagC, tagD`;
+  const parsedComb = db.parseCombinedText(combinedSample);
+  assert(parsedComb && parsedComb.titleText.includes("Judul Gabung 1") && parsedComb.keywordText.includes("tagC"), "parseCombinedText mengekstrak Titles dan Keywords");
+
+  // Uji variasi header parseCombinedText (Judul / Kata Kunci, Title / Keyword)
+  const parsedIndo = db.parseCombinedText(`[Judul]\nFoto pemandangan\n\n[Kata Kunci]\ngunung, alam`);
+  assert(parsedIndo && parsedIndo.titleText === "Foto pemandangan" && parsedIndo.keywordText === "gunung, alam", "parseCombinedText mendukung header [Judul] dan [Kata Kunci]");
+
+  const parsedSingular = db.parseCombinedText(`Title:\nFoto tunggal\n\nKeyword:\ntag1, tag2`);
+  assert(parsedSingular && parsedSingular.titleText === "Foto tunggal" && parsedSingular.keywordText === "tag1, tag2", "parseCombinedText mendukung header Title: dan Keyword:");
+
+  // Uji impor ke preset yang belum ada (ensurePresetExists)
+  const impNewPreset = db.importTextToPreset("new-auto-preset", {
+    titleText: "Judul Preset Baru",
+    keywordText: "kw1, kw2",
+    mode: "replace",
+  }, testDbPath);
+  assert(impNewPreset.length === 1 && impNewPreset[0].title === "Judul Preset Baru", "importTextToPreset berhasil membuat preset baru jika belum ada");
+
+  const impCombined = db.importTextToPreset("stock-set", {
+    titleText: combinedSample,
+    keywordText: "",
+    mode: "replace",
+  }, testDbPath);
+  assert(impCombined.length === 2 && impCombined[0].title === "Judul Gabung 1" && impCombined[0].keywords[0] === "tagA", "importTextToPreset 1 file gabungan berhasil");
+
+  const impTitlesOnlyHeader = db.importTextToPreset("header-test", {
+    titleText: "Titles\nPemandangan Pantai\nFoto Gunung",
+    keywordText: "",
+    mode: "replace",
+  }, testDbPath);
+  assert(impTitlesOnlyHeader.length === 2 && impTitlesOnlyHeader[0].title === "Pemandangan Pantai", "importTextToPreset menyaring header Titles dari baris judul");
+
+  const expCombined = db.exportPresetToText("stock-set", testDbPath);
+  assert(expCombined.combinedText && expCombined.combinedText.includes("Titles\nJudul Gabung 1") && expCombined.combinedText.includes("Keywords\ntagA, tagB"), "exportPresetToText menghasilkan combinedText 1 file");
+
   db.recordHistory({
     operation: "auto",
     folder: "foto",

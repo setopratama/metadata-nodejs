@@ -235,19 +235,35 @@ export function getPresetItems(presetId = "default", dbPath) {
     WHERE preset_id = ?
     ORDER BY sort_order ASC, id ASC
   `).all(presetId);
-  return rows.map((r) => ({
-    id: r.id,
-    presetId: r.preset_id,
-    sortOrder: r.sort_order,
-    title: r.title || "",
-    keywords: r.keywords ? r.keywords.split(",").map((k) => k.trim()).filter(Boolean) : [],
-    keywordsRaw: r.keywords || "",
-    caption: r.caption || "",
-    author: r.author || "",
-  }));
+  return rows
+    .map((r) => ({
+      id: r.id,
+      presetId: r.preset_id,
+      sortOrder: r.sort_order,
+      title: r.title || "",
+      keywords: r.keywords ? r.keywords.split(",").map((k) => k.trim()).filter(Boolean) : [],
+      keywordsRaw: r.keywords || "",
+      caption: r.caption || "",
+      author: r.author || "",
+    }))
+    .filter((it) => !isHeaderLine(it.title));
+}
+
+export function ensurePresetExists(presetId = "default", dbPath) {
+  const db = getDb(dbPath);
+  const row = db.prepare("SELECT id FROM presets WHERE id = ?").get(presetId);
+  if (!row) {
+    const now = new Date().toISOString();
+    const name = String(presetId).charAt(0).toUpperCase() + String(presetId).slice(1);
+    db.prepare(`
+      INSERT INTO presets (id, name, description, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(presetId, name, "Preset otomatis", now, now);
+  }
 }
 
 export function setPresetItems(presetId = "default", items = [], dbPath) {
+  ensurePresetExists(presetId, dbPath);
   const db = getDb(dbPath);
   const now = new Date().toISOString();
 
@@ -285,6 +301,7 @@ export function setPresetItems(presetId = "default", items = [], dbPath) {
 }
 
 export function addPresetItem(presetId = "default", item = {}, dbPath) {
+  ensurePresetExists(presetId, dbPath);
   const db = getDb(dbPath);
   const maxOrder = db.prepare("SELECT MAX(sort_order) as m FROM items WHERE preset_id = ?").get(presetId).m || 0;
   const now = new Date().toISOString();
@@ -318,28 +335,115 @@ export function clearPresetItems(presetId = "default", dbPath) {
 
 // ==================== Import / Export SQLite ====================
 
+const isHeaderLine = (line) => /^\s*\[?\s*(?:Titles?|Judul|Keywords?|Kata\s*Kunci|Tags?)\s*\]?:?\s*$/i.test(line);
+
+/**
+ * Ekstraksi format gabungan 1 file .txt (dengan section Titles dan Keywords).
+ */
+export function parseCombinedText(content) {
+  if (!content || typeof content !== "string") {
+    return null;
+  }
+  const normalized = content.replace(/\u0000/g, "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const titlePattern = /(?:^|\n)\s*(?:\[?\s*(?:Titles?|Judul)\s*\]?|(?:Titles?|Judul):?)\s*\n([\s\S]*?)(?=\n\s*(?:\[?\s*(?:Keywords?|Kata\s*Kunci|Tags?)\s*\]?|(?:Keywords?|Kata\s*Kunci|Tags?):?)|$)/i;
+  const kwPattern = /(?:^|\n)\s*(?:\[?\s*(?:Keywords?|Kata\s*Kunci|Tags?)\s*\]?|(?:Keywords?|Kata\s*Kunci|Tags?):?)\s*\n([\s\S]*$)/i;
+
+  const titlesMatch = normalized.match(titlePattern);
+  const keywordsMatch = normalized.match(kwPattern);
+
+  if (titlesMatch || keywordsMatch) {
+    let titleText = titlesMatch ? titlesMatch[1].trim() : "";
+    let keywordText = keywordsMatch ? keywordsMatch[1].trim() : "";
+
+    titleText = titleText.split("\n").filter((l) => !isHeaderLine(l)).join("\n").trim();
+    keywordText = keywordText.split("\n").filter((l) => !isHeaderLine(l)).join("\n").trim();
+
+    return { titleText, keywordText };
+  }
+
+  // Fallback: Pemisah 2 section dengan double newline jika section pertama tanpa koma dan section kedua berisi koma
+  const blocks = normalized.split(/\n\s*\n+/).map(b => b.trim()).filter(Boolean);
+  if (blocks.length === 2 && !blocks[0].includes(",") && blocks[1].includes(",")) {
+    const cleanTitles = blocks[0].split("\n").filter((l) => !isHeaderLine(l)).join("\n").trim();
+    const cleanKw = blocks[1].split("\n").filter((l) => !isHeaderLine(l)).join("\n").trim();
+    return { titleText: cleanTitles, keywordText: cleanKw };
+  }
+
+  return null;
+}
+
 export function importTextToPreset(presetId = "default", { titleText = "", keywordText = "", mode = "replace" }, dbPath) {
-  const titleLines = titleText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-  const keywordLines = keywordText.split(/\r?\n/);
+  ensurePresetExists(presetId, dbPath);
+  let effectiveTitleText = (titleText || "").replace(/^\uFEFF/, "");
+  let effectiveKeywordText = (keywordText || "").replace(/^\uFEFF/, "");
+
+  // Cek apakah input berisi berkas gabungan (Titles + Keywords)
+  const combinedFromTitle = parseCombinedText(effectiveTitleText);
+  if (combinedFromTitle && (combinedFromTitle.titleText || combinedFromTitle.keywordText)) {
+    effectiveTitleText = combinedFromTitle.titleText;
+    effectiveKeywordText = combinedFromTitle.keywordText;
+  } else {
+    const combinedFromKw = parseCombinedText(effectiveKeywordText);
+    if (combinedFromKw && (combinedFromKw.titleText || combinedFromKw.keywordText)) {
+      effectiveTitleText = combinedFromKw.titleText;
+      effectiveKeywordText = combinedFromKw.keywordText;
+    }
+  }
+
+  const titleLines = effectiveTitleText
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((line) => !isHeaderLine(line));
+  const keywordLines = effectiveKeywordText.split(/\r?\n/);
   const keywordGroups = utils.parseKeywordGroups(keywordLines);
 
-  const maxLen = Math.max(titleLines.length, keywordGroups.length);
+  const existingItems = getPresetItems(presetId, dbPath);
   const items = [];
 
-  for (let i = 0; i < maxLen; i++) {
-    const title = titleLines[i] || "";
-    const kw = keywordGroups[i] || [];
-    items.push({
-      title,
-      keywords: kw,
-      caption: title,
-      author: "",
-    });
+  if (mode === "merge" && titleLines.length > 0 && keywordGroups.length === 0 && existingItems.length > 0) {
+    // Smart Merge: Impor Judul saja, lestarikan kata kunci yang sudah ada di SQLite
+    const maxLen = Math.max(titleLines.length, existingItems.length);
+    for (let i = 0; i < maxLen; i++) {
+      const title = titleLines[i] !== undefined ? titleLines[i] : (existingItems[i] ? existingItems[i].title : "");
+      const kw = existingItems[i] ? existingItems[i].keywords : [];
+      items.push({
+        title,
+        keywords: kw,
+        caption: title,
+        author: existingItems[i] ? existingItems[i].author : "",
+      });
+    }
+  } else if (mode === "merge" && keywordGroups.length > 0 && titleLines.length === 0 && existingItems.length > 0) {
+    // Smart Merge: Impor Kata Kunci saja, lestarikan judul yang sudah ada di SQLite
+    const maxLen = Math.max(keywordGroups.length, existingItems.length);
+    for (let i = 0; i < maxLen; i++) {
+      const title = existingItems[i] ? existingItems[i].title : "";
+      const kw = i < keywordGroups.length ? keywordGroups[i] : (existingItems[i] ? existingItems[i].keywords : []);
+      items.push({
+        title,
+        keywords: kw,
+        caption: title,
+        author: existingItems[i] ? existingItems[i].author : "",
+      });
+    }
+  } else {
+    // Standard Mode (file gabungan / kedua section tersedia)
+    const maxLen = Math.max(titleLines.length, keywordGroups.length);
+    for (let i = 0; i < maxLen; i++) {
+      const title = titleLines[i] || "";
+      const kw = keywordGroups[i] || [];
+      items.push({
+        title,
+        keywords: kw,
+        caption: title,
+        author: "",
+      });
+    }
   }
 
   if (mode === "append") {
-    const existing = getPresetItems(presetId, dbPath);
-    return setPresetItems(presetId, existing.concat(items), dbPath);
+    return setPresetItems(presetId, existingItems.concat(items), dbPath);
   } else {
     return setPresetItems(presetId, items, dbPath);
   }
@@ -348,10 +452,16 @@ export function importTextToPreset(presetId = "default", { titleText = "", keywo
 export function exportPresetToText(presetId = "default", dbPath) {
   const items = getPresetItems(presetId, dbPath);
   const titles = items.map((it) => it.title);
-  const keywords = items.map((it) => it.keywords.join(", "));
+  const keywords = items.map((it) => (Array.isArray(it.keywords) ? it.keywords.join(", ") : it.keywords || ""));
+
+  const titlesFormatted = titles.join("\n\n");
+  const keywordsFormatted = keywords.join("\n\n");
+  const combinedText = `Titles\n${titlesFormatted}\n\n\nKeywords\n${keywordsFormatted}`;
+
   return {
     titlesText: titles.join("\n"),
-    keywordsText: keywords.join("\n\n"),
+    keywordsText: keywordsFormatted,
+    combinedText,
     items,
   };
 }

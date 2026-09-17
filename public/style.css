@@ -480,11 +480,23 @@ body {
   letter-spacing: 0.06em;
   background-color: var(--white);
   border: 1px solid var(--stone-300);
+  color: var(--stone-800);
   cursor: pointer;
 }
 
 .btn-xs:hover {
   background-color: var(--stone-100);
+}
+
+.btn-xs.btn-primary {
+  background-color: var(--emerald-600);
+  color: var(--white);
+  border: 1px solid var(--emerald-600);
+}
+
+.btn-xs.btn-primary:hover {
+  background-color: #047857;
+  border-color: #047857;
 }
 
 .btn-block {
@@ -1188,6 +1200,23 @@ body {
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--emerald-600);
+}
+
+/* Global Floating Toast Notification */
+.global-toast {
+  position: fixed;
+  top: 65px;
+  right: 20px;
+  z-index: 9999;
+  background-color: var(--stone-900);
+  color: var(--white);
+  border-left: 4px solid var(--emerald-600);
+  padding: 0.75rem 1.15rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+  display: none;
+  pointer-events: none;
 }
 
 /* Footer (Docked Bottom Bar) */

@@ -192,11 +192,12 @@ export function ensureUniqueTarget(target, planned, source = null, batchSources 
  * sehingga kelompok yang dihasilkan tidak pernah kosong.
  */
 export function parseKeywordGroups(lines) {
+  const isHeaderLine = (s) => /^\s*\[?\s*(?:Titles?|Judul|Keywords?|Kata\s*Kunci|Tags?)\s*\]?:?\s*$/i.test(s);
   const groups = [];
   let cur = null;
   for (const line of lines) {
     const kw = String(line).trim();
-    if (!kw) {
+    if (!kw || isHeaderLine(kw)) {
       if (cur !== null) {
         groups.push(cur);
         cur = null;

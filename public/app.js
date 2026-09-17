@@ -18,7 +18,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const tabHistory = document.getElementById("tabHistory");
   const paneSqliteGrid = document.getElementById("paneSqliteGrid");
   const paneTitles = document.getElementById("paneTitles");
-  const paneKeywords = document.getElementById("paneKeywords");
   const paneHistory = document.getElementById("paneHistory");
 
   // SQLite Grid Elements
@@ -28,17 +27,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnSaveDb = document.getElementById("btnSaveDb");
   const btnClearDb = document.getElementById("btnClearDb");
   const btnImportFromText = document.getElementById("btnImportFromText");
-  const btnExportToText = document.getElementById("btnExportToText");
 
   // Textarea Inputs & Counters
   const titleInput = document.getElementById("titleInput");
   const keywordInput = document.getElementById("keywordInput");
   const titleLineCount = document.getElementById("titleLineCount");
   const keywordGroupCount = document.getElementById("keywordGroupCount");
-  const btnLoadTitles = document.getElementById("btnLoadTitles");
-  const btnSaveTitles = document.getElementById("btnSaveTitles");
-  const btnLoadKeywords = document.getElementById("btnLoadKeywords");
-  const btnSaveKeywords = document.getElementById("btnSaveKeywords");
+  const btnLoadTemplateSample = document.getElementById("btnLoadTemplateSample");
 
   // History Tab Elements
   const btnRefreshHistory = document.getElementById("btnRefreshHistory");
@@ -438,11 +433,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const allTabs = [
     { btn: tabSqliteGrid, pane: paneSqliteGrid },
     { btn: tabTitles, pane: paneTitles },
-    { btn: tabKeywords, pane: paneKeywords },
     { btn: tabHistory, pane: paneHistory },
   ];
 
-  function setActiveTab(targetTab) {
+  function setActiveTab(targetTab, options = {}) {
+    if (!options.skipSync) {
+      syncTextInputsToCache();
+    }
     allTabs.forEach(({ btn, pane }) => {
       if (btn === targetTab.btn) {
         btn.classList.add("active");
@@ -452,6 +449,9 @@ document.addEventListener("DOMContentLoaded", () => {
         pane.classList.remove("active");
       }
     });
+    if (targetTab.btn === tabSqliteGrid) {
+      renderSqliteGrid();
+    }
     if (targetTab.btn === tabHistory) {
       loadHistory();
     }
@@ -459,7 +459,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   tabSqliteGrid.addEventListener("click", () => setActiveTab({ btn: tabSqliteGrid, pane: paneSqliteGrid }));
   tabTitles.addEventListener("click", () => setActiveTab({ btn: tabTitles, pane: paneTitles }));
-  tabKeywords.addEventListener("click", () => setActiveTab({ btn: tabKeywords, pane: paneKeywords }));
   tabHistory.addEventListener("click", () => setActiveTab({ btn: tabHistory, pane: paneHistory }));
 
   // View toggle (Table vs Grid)
@@ -512,8 +511,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   presetSelect.addEventListener("change", async () => {
     currentPreset = presetSelect.value;
-    log(`Beralih ke preset '${currentPreset}'...`, "info");
     await loadPresetItems(currentPreset);
+    const count = presetItemsCache.length;
+    if (count === 0) {
+      log(`Beralih ke preset '${currentPreset}' (masih kosong 0 entri). Silakan impor file .txt atau tambah baris.`, "info");
+    } else {
+      log(`Beralih ke preset '${currentPreset}' (${count} entri terisi).`, "info");
+    }
   });
 
   btnNewPreset.addEventListener("click", async () => {
@@ -612,6 +616,7 @@ document.addEventListener("DOMContentLoaded", () => {
           presetItemsCache[idx].title = e.target.value;
           presetItemsCache[idx].caption = e.target.value;
           syncCacheToTextInputs();
+          triggerAutoSaveDb();
           triggerLivePreview();
         }
       });
@@ -623,6 +628,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (presetItemsCache[idx]) {
           presetItemsCache[idx].keywords = e.target.value.split(",").map((k) => k.trim()).filter(Boolean);
           syncCacheToTextInputs();
+          triggerAutoSaveDb();
           triggerLivePreview();
         }
       });
@@ -634,6 +640,7 @@ document.addEventListener("DOMContentLoaded", () => {
         presetItemsCache.splice(idx, 1);
         renderSqliteGrid();
         syncCacheToTextInputs();
+        triggerAutoSaveDb();
         triggerLivePreview();
       });
     });
@@ -647,13 +654,103 @@ document.addEventListener("DOMContentLoaded", () => {
       .replace(/"/g, "&quot;");
   }
 
+  let autoSaveTimer = null;
+
+  function triggerAutoSaveDb() {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(async () => {
+      if (!presetItemsCache || presetItemsCache.length === 0) return;
+      try {
+        await fetch("/api/preset-items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            presetId: currentPreset,
+            items: presetItemsCache,
+          }),
+        });
+      } catch {}
+    }, 800);
+  }
+
+  const isHeaderLineClient = (line) => /^\s*\[?\s*(?:Titles?|Judul|Keywords?|Kata\s*Kunci|Tags?)\s*\]?:?\s*$/i.test(line);
+
+  function syncTextInputsToCache() {
+    if (!titleInput) return;
+    const raw = titleInput.value;
+    const combined = parseCombinedTextClient(raw);
+    let effectiveTitles = raw;
+    let effectiveKw = "";
+
+    if (combined && (combined.titleText || combined.keywordText)) {
+      effectiveTitles = combined.titleText;
+      effectiveKw = combined.keywordText;
+    }
+
+    const tLines = effectiveTitles
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .filter((l) => !isHeaderLineClient(l));
+    const kwRaw = effectiveKw.split(/\r?\n/);
+
+    const kwGroups = [];
+    let currentGroup = [];
+    let inGroup = false;
+
+    for (const line of kwRaw) {
+      if (line.trim()) {
+        inGroup = true;
+        const parts = line.split(",").map((k) => k.trim()).filter(Boolean);
+        currentGroup.push(...parts);
+      } else if (inGroup) {
+        kwGroups.push(currentGroup);
+        currentGroup = [];
+        inGroup = false;
+      }
+    }
+    if (inGroup || currentGroup.length > 0) {
+      kwGroups.push(currentGroup);
+    }
+
+    const maxLen = Math.max(tLines.length, kwGroups.length);
+    const updated = [];
+
+    for (let i = 0; i < maxLen; i++) {
+      const prev = presetItemsCache[i] || {};
+      const title = i < tLines.length ? tLines[i] : prev.title || "";
+      const keywords = i < kwGroups.length ? kwGroups[i] : prev.keywords || [];
+
+      updated.push({
+        title,
+        caption: title,
+        keywords,
+        author: prev.author || "",
+      });
+    }
+
+    presetItemsCache = updated;
+    updateInputCounters();
+    triggerAutoSaveDb();
+  }
+
   function syncCacheToTextInputs() {
-    titleInput.value = presetItemsCache.map((it) => it.title || "").join("\n");
-    keywordInput.value = presetItemsCache
-      .map((it) => (Array.isArray(it.keywords) ? it.keywords.join(", ") : it.keywords || ""))
-      .join("\n\n");
+    if (!titleInput) return;
+    if (document.activeElement !== titleInput) {
+      if (presetItemsCache.length > 0) {
+        const titlesFormatted = presetItemsCache.map((it) => it.title || "").join("\n");
+        const keywordsFormatted = presetItemsCache
+          .map((it) => (Array.isArray(it.keywords) ? it.keywords.join(", ") : it.keywords || ""))
+          .join("\n\n");
+        titleInput.value = `Titles\n${titlesFormatted}\n\nKeywords\n${keywordsFormatted}`;
+      } else {
+        titleInput.value = "";
+      }
+    }
     updateInputCounters();
   }
+
+
 
   btnAddRow.addEventListener("click", () => {
     presetItemsCache.push({
@@ -697,43 +794,113 @@ document.addEventListener("DOMContentLoaded", () => {
     await btnSaveDb.click();
   });
 
-  btnImportFromText.addEventListener("click", async () => {
+  function logImportDetails(items, presetId, sourceName) {
+    if (!items || !items.length) {
+      log(`[IMPOR] Tidak ada entri data yang diimpor dari '${sourceName}'.`, "err");
+      return;
+    }
+    log(`[OK] Berhasil mengimpor ${items.length} entri dari '${sourceName}' ke preset SQLite '${presetId}'.`, "ok");
+    items.forEach((it, idx) => {
+      const isLast = idx === items.length - 1;
+      const prefix = isLast ? "  └─ " : "  ├─ ";
+      const kwCount = Array.isArray(it.keywords) ? it.keywords.length : (it.keywords ? it.keywords.split(",").length : 0);
+      const titleShort = it.title ? (it.title.length > 55 ? it.title.substring(0, 52) + "..." : it.title) : "(tanpa judul)";
+      log(`${prefix}Entri #${idx + 1}: "${titleShort}" (${kwCount} kata kunci)`, "info");
+    });
+  }
+
+  const handleImportFromText = async () => {
+    if (!titleInput.value.trim()) {
+      showCopyToast("Editor teks metadata masih kosong. Isikan teks terlebih dahulu atau gunakan '📂 PILIH FILE .TXT'.", "error");
+      return;
+    }
     try {
+      const targetPreset = (presetSelect && presetSelect.value) ? presetSelect.value : currentPreset;
+      currentPreset = targetPreset;
       const res = await fetch("/api/preset-items/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          presetId: currentPreset,
+          presetId: targetPreset,
           titleText: titleInput.value,
-          keywordText: keywordInput.value,
+          keywordText: "",
           mode: "replace",
         }),
       });
       const data = await res.json();
       if (data.success) {
-        log(`Berhasil mengimpor ${data.count} entri dari teks ke SQLite preset '${currentPreset}'.`, "ok");
-        await loadPresetItems(currentPreset);
+        presetItemsCache = data.items || [];
+        renderSqliteGrid();
+        syncCacheToTextInputs();
+        setActiveTab({ btn: tabSqliteGrid, pane: paneSqliteGrid }, { skipSync: true });
+        await loadPresets();
+        logImportDetails(data.items, targetPreset, "Textarea Editor");
+        showCopyToast(`✓ Berhasil mengimpor ${data.count} entri dari teks ke SQLite preset '${targetPreset}'.`);
       }
     } catch (err) {
+      showCopyToast("Gagal impor teks: " + err.message, "error");
       log("Gagal impor teks: " + err.message, "err");
     }
-  });
+  };
 
-  btnExportToText.addEventListener("click", async () => {
-    try {
-      const res = await fetch(`/api/preset-items/export?preset=${encodeURIComponent(currentPreset)}`);
-      const data = await res.json();
-      if (data.success) {
-        titleInput.value = data.titlesText;
-        keywordInput.value = data.keywordsText;
-        updateInputCounters();
-        log(`Data preset '${currentPreset}' diekspor ke tab teks.`, "ok");
-        setActiveTab({ btn: tabTitles, pane: paneTitles });
-      }
-    } catch (err) {
-      log("Gagal ekspor teks: " + err.message, "err");
+  if (btnImportFromText) btnImportFromText.addEventListener("click", handleImportFromText);
+
+  function parseCombinedTextClient(content) {
+    if (!content || typeof content !== "string") {
+      return null;
     }
-  });
+    const normalized = content.replace(/\u0000/g, "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const titlePattern = /(?:^|\n)\s*(?:\[?\s*(?:Titles?|Judul)\s*\]?|(?:Titles?|Judul):?)\s*\n([\s\S]*?)(?=\n\s*(?:\[?\s*(?:Keywords?|Kata\s*Kunci|Tags?)\s*\]?|(?:Keywords?|Kata\s*Kunci|Tags?):?)|$)/i;
+    const kwPattern = /(?:^|\n)\s*(?:\[?\s*(?:Keywords?|Kata\s*Kunci|Tags?)\s*\]?|(?:Keywords?|Kata\s*Kunci|Tags?):?)\s*\n([\s\S]*$)/i;
+
+    const titlesMatch = normalized.match(titlePattern);
+    const keywordsMatch = normalized.match(kwPattern);
+
+    if (titlesMatch || keywordsMatch) {
+      let titleText = titlesMatch ? titlesMatch[1].trim() : "";
+      let keywordText = keywordsMatch ? keywordsMatch[1].trim() : "";
+
+      titleText = titleText.split("\n").filter((l) => !isHeaderLineClient(l.trim())).join("\n").trim();
+      keywordText = keywordText.split("\n").filter((l) => !isHeaderLineClient(l.trim())).join("\n").trim();
+
+      return { titleText, keywordText };
+    }
+
+    const blocks = normalized.split(/\n\s*\n+/).map((b) => b.trim()).filter(Boolean);
+    if (blocks.length === 2 && !blocks[0].includes(",") && blocks[1].includes(",")) {
+      const cleanTitles = blocks[0].split("\n").filter((l) => !isHeaderLineClient(l.trim())).join("\n").trim();
+      const cleanKw = blocks[1].split("\n").filter((l) => !isHeaderLineClient(l.trim())).join("\n").trim();
+      return { titleText: cleanTitles, keywordText: cleanKw };
+    }
+
+    return null;
+  }
+
+
+
+  const btnExportCombinedFile = document.getElementById("btnExportCombinedFile");
+  if (btnExportCombinedFile) {
+    btnExportCombinedFile.addEventListener("click", async () => {
+      try {
+        const res = await fetch(`/api/preset-items/export?preset=${encodeURIComponent(currentPreset)}`);
+        const data = await res.json();
+        if (data.success && data.combinedText) {
+          const blob = new Blob([data.combinedText], { type: "text/plain;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `metadata_${currentPreset}.txt`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          log(`1 File .txt gabungan (Titles & Keywords) berhasil diunduh.`, "ok");
+        }
+      } catch (err) {
+        log("Gagal mengunduh berkas gabungan: " + err.message, "err");
+      }
+    });
+  }
 
   // History Tab Handler
   async function loadHistory() {
@@ -786,13 +953,22 @@ document.addEventListener("DOMContentLoaded", () => {
   // ==================== INPUT COUNTERS & LIVE PREVIEW ====================
 
   function updateInputCounters() {
-    const tLines = titleInput.value
+    const rawVal = titleInput ? titleInput.value : "";
+    const parsedComb = parseCombinedTextClient(rawVal);
+    let effectiveTitles = rawVal;
+    let effectiveKeywords = keywordInput ? keywordInput.value : "";
+    if (parsedComb && (parsedComb.titleText || parsedComb.keywordText)) {
+      effectiveTitles = parsedComb.titleText;
+      effectiveKeywords = parsedComb.keywordText;
+    }
+
+    const tLines = effectiveTitles
       .split(/\r?\n/)
       .map((s) => s.trim())
       .filter(Boolean);
-    titleLineCount.textContent = tLines.length;
+    if (titleLineCount) titleLineCount.textContent = tLines.length;
 
-    const kwRaw = keywordInput.value.split(/\r?\n/);
+    const kwRaw = effectiveKeywords.split(/\r?\n/);
     let kwGroups = 0;
     let inGroup = false;
     for (const l of kwRaw) {
@@ -805,7 +981,7 @@ document.addEventListener("DOMContentLoaded", () => {
         inGroup = false;
       }
     }
-    keywordGroupCount.textContent = kwGroups;
+    if (keywordGroupCount) keywordGroupCount.textContent = kwGroups;
   }
 
   function triggerLivePreview() {
@@ -814,8 +990,18 @@ document.addEventListener("DOMContentLoaded", () => {
     previewDebounceTimer = setTimeout(fetchLivePreview, 300);
   }
 
-  titleInput.addEventListener("input", triggerLivePreview);
-  keywordInput.addEventListener("input", triggerLivePreview);
+  titleInput.addEventListener("input", () => {
+    syncTextInputsToCache();
+    triggerLivePreview();
+  });
+
+  if (keywordInput) {
+    keywordInput.addEventListener("input", () => {
+      syncTextInputsToCache();
+      triggerLivePreview();
+    });
+  }
+
   templateInput.addEventListener("input", triggerLivePreview);
 
   // Load Folders
@@ -859,8 +1045,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const payload = {
         folder: currentFolder,
         preset: currentPreset,
-        titleText: titleInput.value,
-        keywordText: keywordInput.value,
+        titleText: titleInput ? titleInput.value : "",
+        keywordText: keywordInput ? keywordInput.value : "",
         template: templateInput.value.trim() || "{title}",
       };
 
@@ -1200,13 +1386,25 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Copy helpers
-  function showCopyToast(msg) {
-    copyToast.textContent = msg;
-    copyToast.style.display = "inline-block";
-    setTimeout(() => {
-      copyToast.style.display = "none";
-    }, 2500);
+  // Copy & Toast helpers
+  function showCopyToast(msg, type = "success") {
+    if (copyToast) {
+      copyToast.textContent = msg;
+      copyToast.style.display = "inline-block";
+      setTimeout(() => {
+        copyToast.style.display = "none";
+      }, 2500);
+    }
+    const gToast = document.getElementById("globalToast");
+    if (gToast) {
+      gToast.textContent = msg;
+      gToast.style.borderLeftColor = type === "error" ? "var(--red-600)" : "var(--emerald-600)";
+      gToast.style.display = "block";
+      clearTimeout(gToast._timer);
+      gToast._timer = setTimeout(() => {
+        gToast.style.display = "none";
+      }, 3500);
+    }
   }
 
   if (btnCopyTargetName) {
@@ -1406,76 +1604,17 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Save / Load Handlers for Text Tabs
-  btnSaveTitles.addEventListener("click", async () => {
-    try {
-      const res = await fetch("/api/save-inputs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          folder: currentFolder,
-          preset: currentPreset,
-          titleText: titleInput.value,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        log("Daftar judul berhasil disimpan ke SQLite & file.", "ok");
-        await loadPresetItems(currentPreset);
-      }
-    } catch (err) {
-      log("Gagal menyimpan judul: " + err.message, "err");
-    }
-  });
 
-  btnSaveKeywords.addEventListener("click", async () => {
-    try {
-      const res = await fetch("/api/save-inputs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          folder: currentFolder,
-          preset: currentPreset,
-          keywordText: keywordInput.value,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        log("Daftar kata kunci berhasil disimpan ke SQLite & file.", "ok");
-        await loadPresetItems(currentPreset);
-      }
-    } catch (err) {
-      log("Gagal menyimpan kata kunci: " + err.message, "err");
-    }
-  });
 
-  btnLoadTitles.addEventListener("click", async () => {
-    try {
-      const res = await fetch(`/api/inputs?folder=${encodeURIComponent(currentFolder)}&preset=${encodeURIComponent(currentPreset)}`);
-      const data = await res.json();
-      if (data.success && data.titleText) {
-        titleInput.value = data.titleText;
-        triggerLivePreview();
-        log("Daftar judul dimuat ulang.", "info");
-      }
-    } catch (err) {
-      log("Gagal memuat judul: " + err.message, "err");
-    }
-  });
-
-  btnLoadKeywords.addEventListener("click", async () => {
-    try {
-      const res = await fetch(`/api/inputs?folder=${encodeURIComponent(currentFolder)}&preset=${encodeURIComponent(currentPreset)}`);
-      const data = await res.json();
-      if (data.success && data.keywordText) {
-        keywordInput.value = data.keywordText;
-        triggerLivePreview();
-        log("Daftar kata kunci dimuat ulang.", "info");
-      }
-    } catch (err) {
-      log("Gagal memuat kata kunci: " + err.message, "err");
-    }
-  });
+  if (btnLoadTemplateSample) {
+    btnLoadTemplateSample.addEventListener("click", () => {
+      titleInput.value = `Titles\nDepressed woman sitting on shower floor curled up in fetal position suffering from anxiety disorder and panic attack\n\nKeywords\nhugging legs, nervous breakdown, running water, wet hair, shower cabin, adult female, emotional distress, mental breakdown, indoor, mental fatigue, postpartum depression, tiled floor, shower floor, hygiene routine, sad female, panic attack, water droplets, depression, body language, suffering, grief, wet skin, emotional pain, psychological stress, solitude, inner turmoil, despair, hopeless, close up, burnout, anxiety disorder, sorrow, mental health, sitting on floor, exhausted woman, sensory overload, crying in shower, life crisis, coping mechanism, loneliness, vulnerable, holding knees, fetal position, curled up, motherhood crisis, bathroom interior, shower tiles, postpartum blues`;
+      updateInputCounters();
+      syncTextInputsToCache();
+      showCopyToast("✓ Berhasil mengisi pola struktur template contoh!");
+      log("Memuat struktur template contoh ke editor metadata.", "info");
+    });
+  }
 
   // Execution Handlers
   async function executeAction(action) {
@@ -1500,8 +1639,8 @@ document.addEventListener("DOMContentLoaded", () => {
         action,
         folder: currentFolder,
         preset: currentPreset,
-        titleText: titleInput.value,
-        keywordText: keywordInput.value,
+        titleText: titleInput ? titleInput.value : "",
+        keywordText: keywordInput ? keywordInput.value : "",
         template: templateInput.value.trim() || "{title}",
         noBackup: chkNoBackup.checked,
       };
@@ -1563,8 +1702,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const payload = {
         folder: currentFolder,
         preset: currentPreset,
-        titleText: titleInput.value,
-        keywordText: keywordInput.value,
+        titleText: titleInput ? titleInput.value : "",
+        keywordText: keywordInput ? keywordInput.value : "",
         quality,
       };
 
@@ -1619,8 +1758,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const payload = {
         folder: currentFolder,
         preset: currentPreset,
-        titleText: titleInput.value,
-        keywordText: keywordInput.value,
+        titleText: titleInput ? titleInput.value : "",
+        keywordText: keywordInput ? keywordInput.value : "",
         profile: s.profile,
         mode: s.mode,
         hierarchical: s.hierarchical,
